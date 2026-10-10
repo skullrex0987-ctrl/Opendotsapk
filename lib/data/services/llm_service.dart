@@ -53,9 +53,9 @@ class LlmService {
       return GpuInfo(
         vulkanSupported: false,
         gpuName: 'CPU (unknown)',
-        vulkanApiVersion: '',
-        deviceLocalMemoryBytes: 0,
-        freeRamBytes: 0,
+        vulkanApiVersion: -1,
+        deviceLocalMemoryBytes: -1,
+        freeRamBytes: -1,
         recommendedGpuLayers: 0,
       );
     }
