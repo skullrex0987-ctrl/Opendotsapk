@@ -15,6 +15,7 @@ import '../../core/constants/app_constants.dart';
 import '../../core/utils/log.dart';
 import '../../core/utils/text_utils.dart';
 import '../../data/services/document_service.dart';
+import '../../data/services/gpu_service.dart';
 import '../../data/services/cloud_service.dart';
 import '../../data/services/model_manager.dart';
 import '../../data/services/embedding_service.dart';
@@ -776,7 +777,11 @@ class ModelSelectorDialog extends ConsumerWidget {
     var message = 'Failed to load model';
 
     try {
-      ok = await llmService.loadModel(await manager.weightPath(chat));
+      final gpu = await GpuService.detect();
+      ok = await llmService.loadModel(
+        await manager.weightPath(chat),
+        gpuLayers: gpu.recommendedGpuLayers,
+      );
 
       // Vision is optional — a missing projector must not fail the chat model.
       final vision = await manager.activeVision();
@@ -845,7 +850,10 @@ class ModelSelectorDialog extends ConsumerWidget {
         builder: (_) => const Center(child: CircularProgressIndicator()),
       );
 
-      final ok = await ref.read(llmServiceProvider).loadModel(path);
+      final ok = await ref.read(llmServiceProvider).loadModel(
+            path,
+            gpuLayers: (await GpuService.detect()).recommendedGpuLayers,
+          );
       if (context.mounted) Navigator.of(context).pop();
       if (!context.mounted) return;
 
