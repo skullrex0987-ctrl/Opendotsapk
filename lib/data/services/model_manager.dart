@@ -149,7 +149,7 @@ class ModelManager {
             currentFile: f.name,
             error: 'Server returned HTTP ${response.statusCode}',
           );
-          await client.close();
+          client.close();
           return;
         }
 
@@ -170,7 +170,7 @@ class ModelManager {
         await sink.flush();
         await sink.close();
         sink = null;
-        await client.close();
+        client.close();
 
         // Promote the completed file.
         if (await target.exists()) await target.delete();

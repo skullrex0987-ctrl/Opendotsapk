@@ -106,7 +106,7 @@ class ModelSettings extends ConsumerWidget {
   void _showModelDialog(BuildContext context, WidgetRef ref) {
     showDialog(
       context: context,
-      builder: (context) => const ModelSelectorDialog(),
+      builder: (context) => ModelSelectorDialog(),
     );
   }
 }
@@ -142,18 +142,19 @@ class PermissionList extends ConsumerWidget {
     );
   }
   
-  IconData _getToolIcon(String tool) {
+  Widget _getToolIcon(String tool) {
+    // `ListTile.leading` takes a Widget, not an IconData.
     switch (tool) {
-      case 'send_sms': return Icons.sms;
-      case 'create_calendar_event': return Icons.event;
-      case 'add_contact': return Icons.person_add;
-      case 'set_alarm': return Icons.alarm;
-      case 'open_app': return Icons.apps;
-      case 'web_search': return Icons.search;
-      case 'get_location': return Icons.location_on;
-      case 'create_note': return Icons.note;
-      case 'read_notes': return Icons.library_books;
-      default: return Icons.tools;
+      case 'send_sms': return const Icon(Icons.sms);
+      case 'create_calendar_event': return const Icon(Icons.event);
+      case 'add_contact': return const Icon(Icons.person_add);
+      case 'set_alarm': return const Icon(Icons.alarm);
+      case 'open_app': return const Icon(Icons.apps);
+      case 'web_search': return const Icon(Icons.search);
+      case 'get_location': return const Icon(Icons.location_on);
+      case 'create_note': return const Icon(Icons.note);
+      case 'read_notes': return const Icon(Icons.library_books);
+      default: return const Icon(Icons.handyman);
     }
   }
   

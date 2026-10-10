@@ -4,12 +4,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
-import '../data/services/llm_service.dart';
-import '../data/services/embedding_service.dart';
-import '../data/tools/tool_registry.dart';
-import '../data/database/database_helper.dart';
-import '../domain/agents/agent_orchestrator.dart';
-import '../domain/models/models.dart';
+import '../../data/services/llm_service.dart';
+import '../../data/services/embedding_service.dart';
+import '../../data/tools/tool_registry.dart';
+import '../../data/database/database_helper.dart';
+import '../../domain/agents/agent_orchestrator.dart';
+import '../../domain/models/models.dart';
 
 // LLM Service Provider
 final llmServiceProvider = Provider<LlmService>((ref) {

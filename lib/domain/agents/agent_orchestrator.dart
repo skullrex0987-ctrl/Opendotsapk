@@ -2,9 +2,9 @@
 import 'dart:convert';
 import 'package:uuid/uuid.dart';
 import '../models/models.dart';
-import '../services/llm_service.dart';
-import '../tools/tool_registry.dart';
-import '../database/database_helper.dart';
+import '../../data/services/llm_service.dart';
+import '../../data/tools/tool_registry.dart';
+import '../../data/database/database_helper.dart';
 
 class AgentOrchestrator {
   static final AgentOrchestrator _instance = AgentOrchestrator._internal();

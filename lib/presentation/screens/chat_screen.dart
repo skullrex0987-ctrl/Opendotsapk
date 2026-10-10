@@ -7,6 +7,7 @@ import '../providers/providers.dart';
 import '../widgets/message_bubble.dart';
 import '../../core/constants/app_constants.dart';
 import '../../data/services/model_manager.dart';
+import '../../domain/models/models.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
   const ChatScreen({super.key});

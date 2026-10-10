@@ -98,7 +98,7 @@ class ActivityEntry extends StatelessWidget {
           ),
         ),
         title: Text(
-          entry['tool_name'] as String?,
+          (entry['tool_name'] as String?) ?? 'Unknown tool',
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         subtitle: Column(
