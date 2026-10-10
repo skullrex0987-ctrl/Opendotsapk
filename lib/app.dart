@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'presentation/providers/providers.dart';
+import 'presentation/screens/onboarding_screen.dart';
 import 'presentation/screens/main_screen.dart';
+import 'presentation/widgets/biometric_gate.dart';
 import 'core/constants/app_constants.dart';
 
 /// Root application widget.
@@ -39,15 +43,15 @@ class LocalMindApp extends StatelessWidget {
   }
 }
 
-/// Brief splash screen, then hands off to the main shell.
-class SplashScreen extends StatefulWidget {
+/// Brief splash, then first-run onboarding or the main shell.
+class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
 
   @override
-  State<SplashScreen> createState() => _SplashScreenState();
+  ConsumerState<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> {
+class _SplashScreenState extends ConsumerState<SplashScreen> {
   @override
   void initState() {
     super.initState();
@@ -57,8 +61,27 @@ class _SplashScreenState extends State<SplashScreen> {
   Future<void> _boot() async {
     await Future.delayed(const Duration(seconds: 2));
     if (!mounted) return;
+
+    final settings = ref.read(settingsProvider);
+
+    // Give the settings notifier a moment to read the database; the splash is
+    // the only place where a first-run flag can be checked safely.
+    var seenOnboarding = settings['onboarding_done'] == true;
+    for (var i = 0; i < 10 && !seenOnboarding; i++) {
+      await Future.delayed(const Duration(milliseconds: 150));
+      seenOnboarding =
+          ref.read(settingsProvider)['onboarding_done'] == true;
+      if (seenOnboarding) break;
+    }
+
+    if (!mounted) return;
+
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const MainScreen()),
+      MaterialPageRoute(
+        builder: (_) => seenOnboarding
+            ? const _LockedShell()
+            : const OnboardingScreen(),
+      ),
     );
   }
 
@@ -92,6 +115,22 @@ class _SplashScreenState extends State<SplashScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// The main shell behind the optional biometric lock.
+class _LockedShell extends ConsumerWidget {
+  const _LockedShell();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+    final lockOn = settings['biometric_lock'] as bool? ?? false;
+
+    return BiometricGate(
+      enabled: lockOn,
+      child: const MainScreen(),
     );
   }
 }

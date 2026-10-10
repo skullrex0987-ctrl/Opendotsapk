@@ -6,6 +6,10 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 import '../../data/services/llm_service.dart';
 import '../../data/services/embedding_service.dart';
+import '../../data/services/cloud_service.dart';
+import '../../data/services/mcp_service.dart';
+import '../../data/services/router_service.dart';
+import '../../data/services/secure_store.dart';
 import '../../data/tools/tool_registry.dart';
 import '../../data/database/database_helper.dart';
 import '../../domain/agents/agent_orchestrator.dart';
@@ -14,6 +18,26 @@ import '../../domain/models/models.dart';
 // LLM Service Provider
 final llmServiceProvider = Provider<LlmService>((ref) {
   return LlmService.getInstance();
+});
+
+// Cloud LLM Service (bring-your-own-key)
+final cloudServiceProvider = Provider<CloudService>((ref) {
+  return CloudService.instance;
+});
+
+// MCP client — extends the tool set beyond the built-in nine
+final mcpServiceProvider = Provider<McpService>((ref) {
+  return McpService.instance;
+});
+
+// Keystore-backed storage for API keys and the database key
+final secureStoreProvider = Provider<SecureStore>((ref) {
+  return SecureStore.instance;
+});
+
+// Local/cloud routing
+final routerServiceProvider = Provider<RouterService>((ref) {
+  return RouterService.instance;
 });
 
 // Embedding Service Provider
@@ -225,6 +249,20 @@ class SettingsNotifier extends StateNotifier<Map<String, dynamic>> {
     'tts_enabled': true,
     'voice_enabled': true,
     'model_path': null,
+
+    // Cloud / privacy. Defaults are the conservative ones: auto routing,
+    // private mode off, and metered connections biased to the local model.
+    'cloud_mode': 'auto',
+    'private_mode': false,
+    'prefer_local_metered': true,
+    'active_cloud_provider': null,
+    'active_cloud_model': null,
+
+    // Security
+    'biometric_lock': false,
+
+    // First-run
+    'onboarding_done': false,
   }) {
     _loadSettings();
   }
@@ -244,6 +282,35 @@ class SettingsNotifier extends StateNotifier<Map<String, dynamic>> {
     if (ttsEnabled != null) {
       state = Map.from(state)..['tts_enabled'] = ttsEnabled == 'true';
     }
+
+    // Booleans need explicit string parsing; `as bool` would throw on 'true'.
+    for (final key in [
+      'private_mode',
+      'prefer_local_metered',
+      'biometric_lock',
+      'voice_enabled',
+      'onboarding_done',
+    ]) {
+      final raw = await _db.getPreference(key);
+      if (raw != null) {
+        state = Map.from(state)..[key] = raw == 'true';
+      }
+    }
+
+    for (final key in [
+      'cloud_mode',
+      'active_cloud_provider',
+      'active_cloud_model',
+      'model_path',
+    ]) {
+      final raw = await _db.getPreference(key);
+      if (raw != null && raw.isNotEmpty) {
+        state = Map.from(state)..[key] = raw;
+      }
+    }
+
+    // Keep the router's view of connectivity fresh.
+    await RouterService.instance.probeConnectivity();
   }
   
   Future<void> updateSetting(String key, dynamic value) async {

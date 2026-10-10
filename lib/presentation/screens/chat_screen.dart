@@ -1,13 +1,23 @@
 /// Main chat screen
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:uuid/uuid.dart';
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import '../providers/providers.dart';
 import '../widgets/message_bubble.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/utils/log.dart';
+import '../../core/utils/text_utils.dart';
+import '../../data/services/document_service.dart';
 import '../../data/services/model_manager.dart';
 import '../../data/services/embedding_service.dart';
+import '../../data/services/router_service.dart';
 import '../../domain/models/models.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
@@ -23,7 +33,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   final Uuid _uuid = const Uuid();
   bool _isThinking = false;
   String _currentResponse = '';
-  
+
+  /// Local file paths of images queued for the next turn.
+  ///
+  /// Held as paths rather than bytes: the vision model reads from disk, and
+  /// keeping base64 in widget state would balloon memory during a long chat.
+  final List<String> _attachedImages = [];
+
+  /// Documents ingested this session, available as RAG context.
+  final List<IngestedDocument> _attachedDocs = [];
+
+  /// Set after a send so the UI can show where the turn actually ran.
+  String? _lastRoute;
+
   @override
   void dispose() {
     _controller.dispose();
@@ -48,20 +70,25 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           PopupMenuButton<String>(
             onSelected: (value) {
               if (value == 'model') _showModelSelector();
+              if (value == 'export') _exportChat();
             },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
+            itemBuilder: (context) => const [
+              PopupMenuItem(
                 value: 'model',
                 child: Text('Select Model'),
+              ),
+              PopupMenuItem(
+                value: 'export',
+                child: Text('Export chat'),
               ),
             ],
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.cloud_download, color: Colors.grey[400]),
+                Icon(_modelStatusIcon(settings), color: Colors.grey[400]),
                 const SizedBox(width: 4),
                 Text(
-                  settings['model_path'] != null ? 'Loaded' : 'No Model',
+                  _modelStatusLabel(settings),
                   style: TextStyle(color: Colors.grey[400]),
                 ),
               ],
@@ -86,7 +113,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               },
             ),
           ),
-          
+
+          // Attachment previews
+          if (_attachedImages.isNotEmpty || _attachedDocs.isNotEmpty)
+            _buildAttachmentStrip(),
+
+          // Route badge: say plainly where the last turn ran.
+          if (_lastRoute != null) _buildRouteBadge(),
+
           // Input area
           Container(
             padding: const EdgeInsets.all(8),
@@ -102,6 +136,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             ),
             child: Row(
               children: [
+                IconButton(
+                  icon: const Icon(Icons.add_photo_alternate_outlined),
+                  onPressed: _pickImage,
+                  tooltip: 'Attach an image (needs a vision model)',
+                  color: Colors.grey[400],
+                ),
+                IconButton(
+                  icon: const Icon(Icons.attach_file),
+                  onPressed: _pickDocument,
+                  tooltip: 'Attach a document: ${DocumentService.supportedSummary}',
+                  color: Colors.grey[400],
+                ),
                 IconButton(
                   icon: const Icon(Icons.mic),
                   onPressed: _startVoiceInput,
@@ -139,64 +185,310 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       ),
     );
   }
-  
+
+  /// Badge under the composer showing the router's decision.
+  Widget _buildRouteBadge() {
+    final isCloud = _lastRoute!.toLowerCase().contains('cloud') ||
+        _lastRoute!.toLowerCase().contains('sent to');
+    return Container(
+      width: double.infinity,
+      color: isCloud
+          ? Colors.orange.withOpacity(0.15)
+          : Colors.green.withOpacity(0.15),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: Row(
+        children: [
+          Icon(
+            isCloud ? Icons.cloud_outlined : Icons.phone_android,
+            size: 14,
+            color: isCloud ? Colors.orange[300] : Colors.green[300],
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              _lastRoute!,
+              style: TextStyle(
+                fontSize: 11,
+                color: isCloud ? Colors.orange[200] : Colors.green[200],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAttachmentStrip() {
+    return Container(
+      height: 76,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        children: [
+          for (final path in _attachedImages)
+            Stack(
+              children: [
+                Container(
+                  margin: const EdgeInsets.only(right: 8),
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey[700]!),
+                    image: DecorationImage(
+                      image: FileImage(File(path)),
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                ),
+                Positioned(
+                  right: 4,
+                  top: -4,
+                  child: IconButton(
+                    iconSize: 16,
+                    icon: const Icon(Icons.cancel, color: Colors.redAccent),
+                    onPressed: () =>
+                        setState(() => _attachedImages.remove(path)),
+                  ),
+                ),
+              ],
+            ),
+          for (final doc in _attachedDocs)
+            Chip(
+              avatar: const Icon(Icons.description, size: 16),
+              label: Text(
+                '${doc.name} (${doc.chunks.length})',
+                style: const TextStyle(fontSize: 11),
+              ),
+              onDeleted: () => setState(() => _attachedDocs.remove(doc)),
+            ),
+        ],
+      ),
+    );
+  }
+
+  IconData _modelStatusIcon(Map<String, dynamic> settings) {
+    final loaded = settings['model_path'] != null;
+    return loaded ? Icons.check_circle : Icons.cloud_download;
+  }
+
+  String _modelStatusLabel(Map<String, dynamic> settings) {
+    if (settings['model_path'] != null) return 'Loaded';
+    if (ref.read(llmServiceProvider).isLoaded) return 'Loaded';
+    return 'No Model';
+  }
+
+  // -------------------------------------------------------------- attachments
+
+  /// Pick an image and queue it for the next turn.
+  ///
+  /// Vision is only useful with a compatible model attached, so this warns
+  /// instead of silently attaching an image that will be ignored.
+  Future<void> _pickImage() async {
+    try {
+      final picker = ImagePicker();
+      final file = await picker.pickImage(
+        source: ImageSource.gallery,
+        // Downscale before the model sees it: a 12 MP photo is slow to decode
+        // and buys nothing over 1024 px for Moondream-class models.
+        maxWidth: 1024,
+        maxHeight: 1024,
+        imageQuality: 85,
+      );
+      if (file == null || !mounted) return;
+
+      final llm = ref.read(llmServiceProvider);
+      setState(() => _attachedImages.add(file.path));
+
+      if (!llm.isVisionLoaded) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Image attached. The on-device vision model is not loaded — '
+              'this turn will use a cloud model if one is configured.',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      Log.w('image pick failed: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not open the gallery: $e')),
+      );
+    }
+  }
+
+  /// Pick and ingest a document, then hand it to the memory store.
+  Future<void> _pickDocument() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.any,
+        withData: false,
+      );
+      final path = result?.files.single.path;
+      if (path == null || !mounted) return;
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const Center(child: CircularProgressIndicator()),
+      );
+
+      try {
+        final doc = await DocumentService.instance.ingest(path);
+
+        if (doc.textLayerMissing) {
+          if (mounted) Navigator.of(context).pop();
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'That PDF has no text layer (it looks like a scan). '
+                'OCR is not enabled — paste the text instead.',
+              ),
+            ),
+          );
+          return;
+        }
+
+        // Store chunks with embeddings when the encoder is available, so the
+        // document is retrievable by meaning and not only by keyword.
+        final db = ref.read(databaseProvider);
+        final embed = EmbeddingService.getInstance();
+        final id = _uuid.v4();
+
+        await db.insertDocument(
+          id: id,
+          name: doc.name,
+          path: path,
+          mime: doc.mimeGuess,
+          charCount: doc.charCount,
+          chunkCount: doc.chunks.length,
+        );
+
+        if (embed.isLoaded && doc.chunks.isNotEmpty) {
+          final vectors = <List<double>>[];
+          for (final chunk in doc.chunks) {
+            vectors.add(await embed.embed(chunk));
+          }
+          await db.insertChunks(
+            documentId: id,
+            texts: doc.chunks,
+            vectors: vectors,
+          );
+        }
+
+        if (mounted) Navigator.of(context).pop();
+        if (!mounted) return;
+
+        setState(() => _attachedDocs.add(doc));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Added "${doc.name}" — ${doc.chunks.length} chunk(s), '
+              '${doc.estimatedTokens} tokens.',
+            ),
+          ),
+        );
+      } catch (e) {
+        if (mounted) Navigator.of(context).pop();
+        rethrow;
+      }
+    } catch (e) {
+      Log.w('document ingest failed: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$e')),
+      );
+    }
+  }
+
+  // ------------------------------------------------------------------- send
+
   Future<void> _sendMessage([String? text]) async {
     final messageText = text ?? _controller.text.trim();
-    if (messageText.isEmpty) return;
-    
+    final hasImages = _attachedImages.isNotEmpty;
+    if (messageText.isEmpty && !hasImages && _attachedDocs.isEmpty) return;
+
     _controller.clear();
-    
+
+    // Snapshot attachments, then clear so the next turn starts fresh.
+    final imagePath = hasImages ? _attachedImages.first : null;
+    final docCtx = _attachedDocs.isEmpty
+        ? ''
+        : '\n\nContext from attached documents:\n'
+            '${_attachedDocs.map((d) => '--- ${d.name} ---\n${TextUtils.ellipsize(d.text, 4000)}').join('\n\n')}';
+
+    final display = messageText.isEmpty
+        ? (hasImages ? '(image)' : '(document)')
+        : messageText;
+
+    setState(() {
+      _attachedImages.clear();
+      _attachedDocs.clear();
+    });
+
     // Add user message
     final userMessage = ChatMessage(
       id: _uuid.v4(),
       role: 'user',
-      content: messageText,
+      content: imagePath != null ? '$display\n[image attached]' : display,
       timestamp: DateTime.now().millisecondsSinceEpoch,
     );
     await ref.read(chatMessagesProvider.notifier).addMessage(userMessage);
-    
-    // Get related memories
+
+    // ---- route this turn ------------------------------------------------
     final llmService = ref.read(llmServiceProvider);
+    final settings = ref.read(settingsProvider);
+    final router = RouterService.instance;
+    final decision = router.decide(
+      prompt: '$display$docCtx',
+      config: RouterConfig(
+        mode: '${settings['cloud_mode'] ?? 'auto'}',
+        privateMode: settings['private_mode'] as bool? ?? false,
+        preferLocalOnMetered:
+            settings['prefer_local_metered'] as bool? ?? true,
+      ),
+      hasImages: hasImages,
+      localVisionReady: llmService.isVisionLoaded,
+      localModelReady: llmService.isLoaded,
+    );
+
+    if (context.mounted) setState(() => _lastRoute = decision.reason);
+
+    if (decision.isCloud) {
+      await _sendViaCloud(decision, '$display$docCtx', imagePath);
+      return;
+    }
+
     if (!llmService.isLoaded) {
       await _showModelNotLoadedDialog();
       return;
     }
-    
+
     // Process through agent pipeline
     setState(() {
       _isThinking = true;
       _currentResponse = '';
     });
-    
+
     try {
-      final orchestrator = ref.read(agentOrchestratorProvider);
       final recentMessages = ref.read(chatMessagesProvider);
-      
-      // Get streaming response
+
+      // Streaming response
       await for (final token in llmService.generateStream(
-        prompt: _buildPrompt(messageText, recentMessages),
+        prompt: _buildPrompt('$display$docCtx', recentMessages),
+        imagePath: imagePath,
       )) {
         setState(() {
           _currentResponse += token;
         });
       }
-      
-      // Add assistant message
-      final assistantMessage = ChatMessage(
-        id: _uuid.v4(),
-        role: 'assistant',
-        content: _currentResponse,
-        timestamp: DateTime.now().millisecondsSinceEpoch,
-      );
-      await ref.read(chatMessagesProvider.notifier).addMessage(assistantMessage);
-      
-      // Enable TTS if configured
-      final ttsEnabled = ref.read(settingsProvider)['tts_enabled'] as bool? ?? true;
-      if (ttsEnabled) {
-        await ref.read(textToSpeechProvider.notifier).speak(_currentResponse);
-      }
+
+      await _finishAssistantMessage();
     } catch (e) {
-      // Show error
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error: $e')),
@@ -210,6 +502,113 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         });
         _scrollToBottom();
       }
+    }
+  }
+
+  /// Send the turn to the selected cloud provider instead of the local model.
+  Future<void> _sendViaCloud(
+    RouteDecision decision,
+    String prompt,
+    String? imagePath,
+  ) async {
+    final provider = decision.provider;
+    if (provider == null) {
+      await _showModelNotLoadedDialog();
+      return;
+    }
+
+    setState(() {
+      _isThinking = true;
+      _currentResponse = '';
+    });
+
+    try {
+      final history = ref.read(chatMessagesProvider);
+      final messages = <Map<String, String>>[];
+      for (final m in history.take(12)) {
+        messages.add({'role': m.role, 'content': m.content});
+      }
+      messages.add({'role': 'user', 'content': prompt});
+
+      final imagesB64 = <String>[];
+      if (imagePath != null) {
+        try {
+          imagesB64.add(base64Encode(await File(imagePath).readAsBytes()));
+        } catch (e) {
+          Log.w('could not read image for cloud: $e');
+        }
+      }
+
+      final cloud = ref.read(cloudServiceProvider);
+      await for (final token in cloud.stream(
+        provider: provider,
+        turn: CloudTurn(
+          modelId: decision.modelId,
+          messages: messages,
+          imageBase64: imagesB64,
+        ),
+      )) {
+        if (mounted) {
+          setState(() => _currentResponse += token);
+        }
+      }
+
+      await _finishAssistantMessage();
+    } catch (e) {
+      Log.w('cloud turn failed: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isThinking = false;
+          _currentResponse = '';
+        });
+        _scrollToBottom();
+      }
+    }
+  }
+
+  /// Persist the assistant reply, then speak it if TTS is on.
+  Future<void> _finishAssistantMessage() async {
+    if (_currentResponse.trim().isEmpty) return;
+
+    final assistantMessage = ChatMessage(
+      id: _uuid.v4(),
+      role: 'assistant',
+      content: _currentResponse,
+      timestamp: DateTime.now().millisecondsSinceEpoch,
+    );
+    await ref.read(chatMessagesProvider.notifier).addMessage(assistantMessage);
+
+    final ttsEnabled =
+        ref.read(settingsProvider)['tts_enabled'] as bool? ?? true;
+    if (ttsEnabled) {
+      await ref.read(textToSpeechProvider.notifier).speak(_currentResponse);
+    }
+  }
+
+  Future<void> _exportChat() async {
+    final messages = ref.read(chatMessagesProvider);
+    if (messages.isEmpty) return;
+
+    final buf = StringBuffer('# LocalMind chat export\n\n');
+    for (final m in messages) {
+      buf.writeln('**${m.role}** (${m.timestamp})');
+      buf.writeln(m.content);
+      buf.writeln();
+    }
+
+    try {
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/localmind-chat.md');
+      await file.writeAsString(buf.toString());
+      await Share.shareXFiles([XFile(file.path)], text: 'LocalMind chat');
+    } catch (e) {
+      Log.w('export failed: $e');
     }
   }
   
@@ -425,11 +824,50 @@ class ModelSelectorDialog extends ConsumerWidget {
   }
 
   Future<void> _loadModelFromStorage(BuildContext context, WidgetRef ref) async {
-    // In production, use file picker
-    // For now, show placeholder
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('File picker not implemented in demo')),
-    );
+    // Pick any GGUF from the device and bind it directly — useful for models
+    // the catalog does not know about.
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.any,
+        withData: false,
+      );
+      final path = result?.files.single.path;
+      if (path == null || !context.mounted) return;
+
+      if (!path.toLowerCase().endsWith('.gguf')) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('That is not a .gguf file. Vision projectors must '
+                'also be GGUF (mmproj-*.gguf).'),
+          ),
+        );
+        return;
+      }
+
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const Center(child: CircularProgressIndicator()),
+      );
+
+      final ok = await ref.read(llmServiceProvider).loadModel(path);
+      if (context.mounted) Navigator.of(context).pop();
+      if (!context.mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ok ? 'Loaded ${path.split('/').last}' : 'Failed to load that GGUF',
+          ),
+        ),
+      );
+    } catch (e) {
+      Log.w('load from storage failed: $e');
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not load that file: $e')),
+      );
+    }
   }
 }
 
