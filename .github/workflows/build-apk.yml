@@ -36,6 +36,11 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # native_llama 1.0.1 forces GGML_VULKAN=ON but vendors a ggml-cpu with
+      # no flash-attn kernels, so the Vulkan backend cannot link. Turn it off.
+      - name: Patch native_llama for Android
+        run: python3 scripts/patch_native_llama.py
+
       - name: Analyze (non-blocking)
         run: flutter analyze || true
 

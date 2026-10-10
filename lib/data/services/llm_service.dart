@@ -1,42 +1,53 @@
-/// LLM + vision service — local GGUF inference via llama.cpp.
+/// LLM service — local GGUF text inference via llama.cpp.
 ///
-/// Backed by `native_llama`, which vendors the whole llama.cpp tree (tools/mtmd
-/// included) inside its pub archive so the NDK genuinely compiles libllama.so
-/// into the APK. That detail is not cosmetic: `llama_cpp_dart` and
-/// `flutter_llama` both point their CMake config at a `llama.cpp/` directory
-/// that is absent from the published archive — the build succeeds and then the
-/// app fails at runtime because the native library was never packaged.
+/// Backed by `llama_flutter_android`, which bundles the llama.cpp source tree
+/// in its pub archive so the NDK actually compiles `libllama.so` into the APK.
+/// That detail is not cosmetic: `llama_cpp_dart` and `flutter_llama` both point
+/// their CMake config at a `llama.cpp/` directory that is absent from the
+/// published archive — the build succeeds and then the app fails at runtime
+/// because the native library was never packaged.
+///
+/// **Vision is not supported on this binding.** It ships no mtmd code, so a
+/// projector can never be bound and images cannot be passed to the model.
+/// `native_llama` does vendor mtmd and would fix that, but its link line is
+/// `llama dl vulkan` and NDK r28 fails with hundreds of
+/// `undefined symbol: div_f32_f16_f32_len` (ggml CPU backend) errors — so it
+/// is not wired up here. [loadVision] says so out loud rather than failing
+/// silently deep inside generation.
 ///
 /// Native surface used here:
-///   final llm = NativeLlama();
-///   await llm.initModel(path, nCtx: 4096, nGpuLayers: 99);
-///   await llm.initVision(mmprojPath);           // enables image input
-///   llm.generateResponse(msgs, mediaPaths: [jpg]).listen(print);
+///   final c = LlamaController();
+///   await c.loadModel(modelPath: path, contextSize: 4096, gpuLayers: 99);
+///   c.generate(prompt: 'hi').listen(print);
 ///
 /// Public surface used by the rest of the app:
 ///   bool isLoaded · Future<bool> loadModel(String) · Stream<String> generateStream(...)
 ///   Future<String> generate(...) · Future<bool> loadVision(...) · Future<String> describeImage(...)
-///   Future<void> stop() · Future<void> release()
+///   Future<void> stop() · Future<void> release() · Future<GpuInfo> detectGpu()
 library;
 
-import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:native_llama/native_llama.dart';
-
-import '../../domain/models/local_model.dart';
+import 'package:llama_flutter_android/llama_flutter_android.dart';
 
 class LlmService {
   static LlmService? _instance;
 
-  final NativeLlama _llm = NativeLlama();
+  final LlamaController _llm = LlamaController();
 
   String? _modelPath;
   bool _isLoaded = false;
   int _nCtx = 2048;
 
-  String? _visionProjectorPath;
+  /// True when a vision projector is attached.
+  ///
+  /// Always false on the llama_flutter_android binding: that plugin ships no
+  /// mtmd code at all, so there is no way to feed an image to a model. Kept as
+  /// real state rather than a hardcoded false so swapping in an mtmd-capable
+  /// binding (see the pubspec notes) needs no call-site changes.
   bool _isVisionLoaded = false;
+  String? _visionProjectorPath;
 
   /// Fires for every generated token (same data as the stream).
   void Function(String token)? onToken;
@@ -48,35 +59,51 @@ class LlmService {
 
   static LlmService getInstance() => _instance ??= LlmService._();
 
-  /// Number of usable CPU cores — the plugin picks thread count from this.
-  Future<int> cpuCores() async {
+  /// GPU capability of the current device.
+  Future<GpuInfo> detectGpu() async {
     try {
-      return await _llm.getCpuCores();
-    } catch (_) {
-      return 4;
+      return await _llm.detectGpu();
+    } catch (e) {
+      onError?.call('GPU detection failed: $e');
+      return const GpuInfo(
+        vulkanSupported: false,
+        gpuName: 'CPU (unknown)',
+        vulkanApiVersion: -1,
+        deviceLocalMemoryBytes: -1,
+        freeRamBytes: -1,
+        recommendedGpuLayers: 0,
+      );
     }
   }
 
   /// Load a GGUF chat model. Returns false (and reports via [onError]) on
   /// failure rather than throwing, so the UI can show a message.
   ///
-  /// [gpuLayers] is passed straight through; the plugin's CMake bakes in
-  /// `GGML_USE_VULKAN=1`, so anything above 0 engages GPU offload when the
-  /// device exposes a working Vulkan driver.
+  /// [gpuLayers] defaults to 0 because the native build compiles the Vulkan
+  /// backend out (see scripts/patch_native_llama.py), so there is no GPU
+  /// backend to offload to. Inference runs on llama.cpp's CPU kernels, which is
+  /// the right call for the 0.5B-class models this app ships anyway.
   Future<bool> loadModel(
     String modelPath, {
     int nCtx = 2048,
-    int gpuLayers = 99,
+    int gpuLayers = 0,
   }) async {
     try {
       await release();
       _nCtx = nCtx;
 
-      await _llm.initModel(
-        modelPath,
-        nCtx: nCtx,
-        nThreads: await cpuCores(),
-        nGpuLayers: gpuLayers,
+      // Offload whatever the device can actually hold; falls back to 0 (CPU).
+      var layers = gpuLayers;
+      try {
+        layers = (await _llm.detectGpu()).recommendedGpuLayers;
+      } catch (_) {
+        layers = 0;
+      }
+
+      await _llm.loadModel(
+        modelPath: modelPath,
+        contextSize: nCtx,
+        gpuLayers: layers,
       );
 
       _modelPath = modelPath;
@@ -91,36 +118,39 @@ class LlmService {
     }
   }
 
-  /// Load the mmproj projector that makes a vision model usable.
+  /// Attach a vision projector so the model can read images.
   ///
-  /// Kept separate from [loadModel] because the projector belongs to the vision
-  /// model, not the chat model, and the two are downloaded independently.
+  /// Not supported on this binding: llama_flutter_android ships no mtmd code,
+  /// so a projector can never be bound. Returns false rather than pretending.
+  /// [mmprojPath] is validated anyway so a broken download is caught here and
+  /// not three layers deeper.
   Future<bool> loadVision(String mmprojPath) async {
-    try {
-      await _llm.initVision(mmprojPath);
-      _visionProjectorPath = mmprojPath;
-      _isVisionLoaded = true;
-      debugPrint('[LlmService] vision projector loaded: $mmprojPath');
-      return true;
-    } catch (e) {
-      onError?.call('Failed to load vision projector: $e');
+    if (!await File(mmprojPath).exists()) {
+      onError?.call('Projector file missing: $mmprojPath');
       _isVisionLoaded = false;
       _visionProjectorPath = null;
       return false;
     }
+    onError?.call(
+      'Vision is not supported by this build: the llama.cpp binding ships '
+      'without mtmd. Run the text model only.',
+    );
+    _isVisionLoaded = false;
+    _visionProjectorPath = null;
+    return false;
   }
 
-  /// Turn a list of messages into the plugin's wire format.
-  static List<Map<String, String>> _wire(
+  /// Turn raw prompt text into the plugin's chat-message list.
+  static List<ChatMessage> _wire(
     String prompt, {
     String? systemPrompt,
-    List<Map<String, String>> history = const [],
+    List<ChatMessage> history = const [],
   }) {
     return [
       if (systemPrompt != null)
-        {'role': 'system', 'content': systemPrompt},
+        ChatMessage(role: 'system', content: systemPrompt),
       ...history,
-      {'role': 'user', 'content': prompt},
+      ChatMessage(role: 'user', content: prompt),
     ];
   }
 
@@ -132,7 +162,7 @@ class LlmService {
     required String prompt,
     int maxTokens = 512,
     String? systemPrompt,
-    List<Map<String, String>> history = const [],
+    List<ChatMessage> history = const [],
     double temperature = 0.7,
     double topP = 0.9,
     int topK = 40,
@@ -141,11 +171,17 @@ class LlmService {
     if (!_isLoaded) {
       throw StateError('Model not loaded. Call loadModel() first.');
     }
+    if (imagePath != null) {
+      throw UnsupportedError(
+        'This build cannot pass images to the model (no mtmd in the binding).',
+      );
+    }
 
     try {
-      final out = _llm.generateResponse(
-        _wire(prompt, systemPrompt: systemPrompt, history: history),
-        mediaPaths: imagePath == null ? null : [imagePath],
+      final messages = _wire(prompt, systemPrompt: systemPrompt, history: history);
+      final out = _llm.generateChat(
+        messages: messages,
+        maxTokens: maxTokens,
         temperature: temperature,
         topP: topP,
         topK: topK,
@@ -167,7 +203,7 @@ class LlmService {
     required String prompt,
     int maxTokens = 512,
     String? systemPrompt,
-    List<Map<String, String>> history = const [],
+    List<ChatMessage> history = const [],
     String? imagePath,
   }) async {
     final buffer = StringBuffer();
@@ -182,18 +218,26 @@ class LlmService {
     return buffer.toString();
   }
 
-  /// Ask the currently loaded vision model to describe [imagePath].
+  /// Ask the loaded model to describe [imagePath].
+  ///
+  /// Throws [UnsupportedError] on this binding rather than returning a made-up
+  /// description — a hallucinated image caption is worse than an error.
   Future<String> describeImage(
     String imagePath, {
     String instruction = 'Describe this image in detail.',
-  }) {
+  }) async {
+    if (!_isVisionLoaded) {
+      throw UnsupportedError(
+        'Vision is unavailable: this build ships no mtmd support.',
+      );
+    }
     return generate(prompt: instruction, imagePath: imagePath);
   }
 
   /// Interrupt an in-flight generation.
   Future<void> stop() async {
     try {
-      await _llm.abortGeneration();
+      await _llm.stop();
     } catch (_) {
       // Nothing running.
     }
@@ -218,6 +262,4 @@ class LlmService {
   bool get isVisionLoaded => _isVisionLoaded;
   String? get visionProjectorPath => _visionProjectorPath;
 
-  /// True when [model] can answer image questions in the current session.
-  bool canSee(LocalModel model) => _isLoaded && _isVisionLoaded && model.isVision;
 }
