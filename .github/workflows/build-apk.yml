@@ -39,6 +39,15 @@ jobs:
       - name: Analyze (non-blocking)
         run: flutter analyze || true
 
+      # --- diagnostics: is the llama.cpp plugin actually part of the build? ---
+      - name: Diagnose plugin wiring
+        run: |
+          echo "### .flutter-plugins-dependencies"
+          cat .flutter-plugins-dependencies || echo "(missing)"
+          echo
+          echo "### Gradle subprojects"
+          cd android && ./gradlew projects --console=plain -q 2>&1 | head -60; cd ..
+
       - name: Build release APK
         run: flutter build apk --release
 
@@ -47,6 +56,19 @@ jobs:
           mkdir -p out
           cp build/app/outputs/flutter-apk/app-release.apk \
              out/localmind-release.apk
+
+      # --- gate: the app is useless without the native llama.cpp runtime ---
+      - name: Verify native libraries
+        run: |
+          echo "### .so files shipped in the APK"
+          unzip -l out/localmind-release.apk | grep -E "\.so$" || true
+          echo
+          if unzip -l out/localmind-release.apk | grep -q "libllama"; then
+            echo "OK: llama.cpp native runtime is present."
+          else
+            echo "::error::libllama*.so missing - local inference would fail at runtime."
+            exit 1
+          fi
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
