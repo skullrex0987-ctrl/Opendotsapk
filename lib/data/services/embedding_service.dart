@@ -99,7 +99,9 @@ class EmbeddingService {
 
       // Prefer a pooled sentence embedding when the model exposes one,
       // otherwise mean-pool the token-level output.
-      final dynamic first = outputs.first.value;
+      final OrtValue? firstOut = outputs.first;
+      if (firstOut == null) return List<double>.filled(_dim, 0.0);
+      final dynamic first = firstOut.value;
       final flat = _flatten(first);
       if (flat.length == _dim) return _normalise(flat);
       return _meanPoolAndNormalise(flat, ids.length);

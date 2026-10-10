@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/providers.dart';
 import '../../core/constants/app_constants.dart';
+import 'chat_screen.dart' show ModelSelectorDialog;
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
