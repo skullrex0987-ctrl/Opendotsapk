@@ -13,7 +13,7 @@ class AgentOrchestrator {
   
   final LlmService _llm = LlmService.getInstance();
   final ToolRegistry _tools = ToolRegistry();
-  final DatabaseHelper _db = DatabaseHelper();
+  final DatabaseHelper _db = DatabaseHelper.instance;
   final Uuid _uuid = const Uuid();
   
   /// Process user message through multi-agent pipeline

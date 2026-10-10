@@ -28,7 +28,7 @@ final toolRegistryProvider = Provider<ToolRegistry>((ref) {
 
 // Database Helper Provider
 final databaseProvider = Provider<DatabaseHelper>((ref) {
-  return DatabaseHelper();
+  return DatabaseHelper.instance;
 });
 
 // Agent Orchestrator Provider
@@ -130,7 +130,7 @@ final chatMessagesProvider = StateNotifierProvider<ChatNotifier, List<ChatMessag
 
 class ChatNotifier extends StateNotifier<List<ChatMessage>> {
   final Ref ref;
-  final DatabaseHelper _db = DatabaseHelper();
+  final DatabaseHelper _db = DatabaseHelper.instance;
   
   ChatNotifier(this.ref) : super([]) {
     _loadMessages();
@@ -163,7 +163,7 @@ final toolPermissionsProvider = StateNotifierProvider<PermissionsNotifier, Map<S
 });
 
 class PermissionsNotifier extends StateNotifier<Map<String, String>> {
-  final DatabaseHelper _db = DatabaseHelper();
+  final DatabaseHelper _db = DatabaseHelper.instance;
   
   PermissionsNotifier() : super({}) {
     _loadPermissions();
@@ -196,7 +196,7 @@ final activityLogProvider = StateNotifierProvider<ActivityLogNotifier, List<Map<
 });
 
 class ActivityLogNotifier extends StateNotifier<List<Map<String, dynamic>>> {
-  final DatabaseHelper _db = DatabaseHelper();
+  final DatabaseHelper _db = DatabaseHelper.instance;
   
   ActivityLogNotifier() : super([]) {
     _loadLog();
@@ -217,7 +217,7 @@ final settingsProvider = StateNotifierProvider<SettingsNotifier, Map<String, dyn
 });
 
 class SettingsNotifier extends StateNotifier<Map<String, dynamic>> {
-  final DatabaseHelper _db = DatabaseHelper();
+  final DatabaseHelper _db = DatabaseHelper.instance;
   
   SettingsNotifier() : super({
     'context_size': 2048,
