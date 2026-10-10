@@ -61,12 +61,13 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
   }
 
   Future<void> _loadSelection() async {
-    final Future<String?> lookups = Future.wait<String?>([
+    // `Future.wait` returns the list of results, not a single String?, so the
+    // await has to be on the awaited list itself.
+    final List<String?> ids = await Future.wait<String?>([
       _manager.activeLlmId(),
       _manager.activeVisionId(),
       _manager.activeEmbeddingId(),
     ]);
-    final ids = await lookups;
     if (!mounted) return;
     setState(() {
       _activeLlm = ids[0];
