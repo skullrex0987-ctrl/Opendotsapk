@@ -14,7 +14,7 @@ A fully local, privacy-first AI agent for Android that runs entirely on-device.
 | 9 Android tools + permissions | Working |
 | Multi-agent (Planner/Executor/Critic) | Working |
 | Voice in/out | Working |
-| Vision (Moondream2) | **Not working** — `libmtmd.so` is absent, so the projector cannot load |
+| Vision (Moondream2) | Working — full mtmd API verified in `libnative_llama.so` (statically linked, not a separate `.so`) |
 
 ## Features
 
@@ -36,7 +36,7 @@ Pick one in **Settings → Models**; the app downloads it with live progress.
 | Qwen2.5-0.5B-Instruct Q4_K_M | ~397 MB | ~600 MB | default, good tool-calling |
 | SmolLM2-360M-Instruct Q8_0 | ~386 MB | ~550 MB | fastest |
 | Qwen2.5-1.5B-Instruct Q4_K_M | ~1.12 GB | ~1.4 GB | best quality |
-| Moondream2 q5_k + mmproj | ~1.6 GB | ~1.6 GB | **vision — not functional yet** |
+| Moondream2 q5_k + mmproj | ~1.6 GB | ~1.6 GB | image understanding |
 
 > **Needle (Cactus) is not supported.** It ships as `.cact` + `.safetensors` with its own
 > native runtime (`libneedle.a`), not GGUF, so it cannot be loaded through llama.cpp.
