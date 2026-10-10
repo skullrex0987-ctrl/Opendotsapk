@@ -65,7 +65,7 @@ class LlmService {
       return await _llm.detectGpu();
     } catch (e) {
       onError?.call('GPU detection failed: $e');
-      return const GpuInfo(
+      return GpuInfo(
         vulkanSupported: false,
         gpuName: 'CPU (unknown)',
         vulkanApiVersion: -1,

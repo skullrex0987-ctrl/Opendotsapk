@@ -177,7 +177,7 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
                 'native runtime, not llama.cpp.',
           ),
           ...ModelCatalog.visionModels.map(
-            (m) => _row(m, selectedId: _activeVision),
+            (m) => _row(m, selectedId: _activeVision, usable: ModelCatalog.isUsable(m)),
           ),
           const Divider(height: 32),
           const _SectionHeader(
@@ -201,7 +201,7 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
     );
   }
 
-  Widget _row(LocalModel m, {required String? selectedId}) {
+  Widget _row(LocalModel m, {required String? selectedId, bool usable = true}) {
     return FutureBuilder<bool>(
       future: _manager.isInstalled(m),
       builder: (context, snap) {
@@ -209,12 +209,13 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
         final selected = installed && selectedId == m.id;
         final busy = _busy.contains(m.id);
         final progress = _progress[m.id];
+        final active = usable && installed;
 
         return ListTile(
           leading: Icon(
             selected
                 ? Icons.radio_button_checked
-                : Icons.radio_button_unchecked,
+                : (usable ? Icons.radio_button_unchecked : Icons.block),
             color: selected ? Theme.of(context).colorScheme.primary : null,
           ),
           title: Text(m.displayName),
@@ -258,18 +259,23 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
                       },
                     )
                   : IconButton(
-                      tooltip: 'Download',
-                      icon: const Icon(Icons.cloud_download_outlined),
-                      onPressed: () => _download(m),
+                      tooltip: usable ? 'Download' : 'Not supported yet',
+                      icon: Icon(
+                        Icons.cloud_download_outlined,
+                        color: usable ? null : Colors.grey,
+                      ),
+                      onPressed: usable ? () => _download(m) : null,
                     ),
-          onTap: () async {
+          onTap: usable
+              ? () async {
             if (!installed) {
               await _download(m);
             } else {
               await _select(m, true);
               if (mounted) setState(() {});
             }
-          },
+          }
+              : null,
         );
       },
     );

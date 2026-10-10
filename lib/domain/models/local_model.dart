@@ -125,7 +125,9 @@ class ModelCatalog {
   static const LocalModel moondream2 = LocalModel(
     id: 'moondream2-q5k',
     displayName: 'Moondream2 (vision)',
-    description: 'Image understanding + captioning. Ships with projector.',
+    description: 'Image understanding. NOT USABLE YET - this build ships no '
+        'mtmd support, so the projector cannot be bound. Listed for '
+        'completeness; see the notes in LlmService.',
     kind: ModelKind.vision,
     fileName: 'moondream2-050824-q5k.gguf',
     url: 'https://huggingface.co/cjpais/moondream2-llamafile/resolve/main/moondream2-050824-q5k.gguf',
@@ -189,6 +191,11 @@ class ModelCatalog {
 
   /// Default chat model (smallest that still does tool calls well).
   static const LocalModel defaultLlm = qwen05b;
+
+  /// True when this build can actually serve [m]. Vision is false until the
+  /// llama.cpp binding ships mtmd — better to hide the option than to let the
+  /// user download 1.3 GB that will never load.
+  static bool isUsable(LocalModel m) => !m.isVision;
 
   /// Deliberately unsupported, documented so the UI can explain why.
   static const String needleNote =
