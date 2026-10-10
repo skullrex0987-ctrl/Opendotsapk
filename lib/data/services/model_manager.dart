@@ -81,13 +81,22 @@ class ModelManager {
     return pathForFile(name);
   }
 
-  /// True when every file the model needs is present on disk.
+  /// Per-file completeness floors. Weights need megabytes; `vocab.txt` is only
+  /// ~227 KB and a flat 1 MB check would treat it as permanently missing.
+  static Map<String, int> _floorsFor(LocalModel m) => <String, int>{
+        m.fileName: m.minBytes,
+        if (m.projectorFileName != null) m.projectorFileName!: m.minBytes,
+        for (final f in m.extraFiles) f.name: f.minBytes,
+      };
+
+  /// True when every file the model needs is present on disk and complete.
   Future<bool> isInstalled(LocalModel m) async {
+    final floors = _floorsFor(m);
+
     for (final f in m.files) {
       final file = File(await pathForFile(f.name));
       if (!await file.exists()) return false;
-      // Guard against a truncated/aborted download.
-      if (await file.length() < 1024 * 1024) return false;
+      if (await file.length() < (floors[f.name] ?? m.minBytes)) return false;
     }
     return true;
   }
@@ -97,7 +106,8 @@ class ModelManager {
     final dir = await modelsDir();
     var total = 0;
     await for (final entity in dir.list()) {
-      if (entity is File && entity.path.endsWith('.gguf')) {
+      if (entity is File &&
+          (entity.path.endsWith('.gguf') || entity.path.endsWith('.onnx'))) {
         total += await entity.length();
       }
     }
@@ -115,6 +125,7 @@ class ModelManager {
     // Clear the selection if the deleted model was active.
     if (await activeLlmId() == m.id) await setActiveLlmId(null);
     if (await activeVisionId() == m.id) await setActiveVisionId(null);
+    if (await activeEmbeddingId() == m.id) await setActiveEmbeddingId(null);
   }
 
   /// Download a model, emitting progress until complete.
@@ -124,12 +135,14 @@ class ModelManager {
   Stream<DownloadProgress> download(LocalModel m) async* {
     final dir = await modelsDir();
     final totalBytes = m.approxBytes;
+    final floors = _floorsFor(m);
 
     for (final f in m.files) {
       final target = File(p.join(dir.path, f.name));
       final partFile = File('${target.path}.part');
+      final floor = floors[f.name] ?? m.minBytes;
 
-      if (await target.exists() && await target.length() > 1024 * 1024) {
+      if (await target.exists() && await target.length() >= floor) {
         continue; // already have this file
       }
 
@@ -232,6 +245,20 @@ class ModelManager {
     }
   }
 
+  Future<String?> activeEmbeddingId() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(AppConstants.prefActiveEmbeddingId);
+  }
+
+  Future<void> setActiveEmbeddingId(String? id) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (id == null) {
+      await prefs.remove(AppConstants.prefActiveEmbeddingId);
+    } else {
+      await prefs.setString(AppConstants.prefActiveEmbeddingId, id);
+    }
+  }
+
   /// The active chat model, falling back to the default when unset/missing.
   Future<LocalModel> activeLlm() async {
     final id = await activeLlmId();
@@ -245,6 +272,17 @@ class ModelManager {
     final id = await activeVisionId();
     final m = ModelCatalog.byId(id);
     if (m != null && m.isVision && await isInstalled(m)) return m;
+    return null;
+  }
+
+  /// The active embedding model, or null when none is installed/selected.
+  ///
+  /// Deliberately no fallback: Memory search must be *off* rather than
+  /// silently producing hash-token garbage when the encoder is absent.
+  Future<LocalModel?> activeEmbedding() async {
+    final id = await activeEmbeddingId();
+    final m = ModelCatalog.byId(id);
+    if (m != null && m.isEmbedding && await isInstalled(m)) return m;
     return null;
   }
 }

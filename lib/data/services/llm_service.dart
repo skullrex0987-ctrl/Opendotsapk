@@ -1,34 +1,42 @@
-/// LLM service — local GGUF inference via llama.cpp.
+/// LLM + vision service — local GGUF inference via llama.cpp.
 ///
-/// Backed by `llama_flutter_android`, which bundles the full llama.cpp source
-/// tree under `android/src/main/cpp/llama.cpp/` and compiles it with the NDK
-/// as part of the Gradle build. That matters: `llama_cpp_dart` and
-/// `flutter_llama` both point their CMake config at a `llama.cpp` directory
-/// that is *not* present in their published pub.dev archives, so the resulting
-/// APK ships without `libllama.so` and the LLM silently never loads.
+/// Backed by `native_llama`, which vendors the whole llama.cpp tree (tools/mtmd
+/// included) inside its pub archive so the NDK genuinely compiles libllama.so
+/// into the APK. That detail is not cosmetic: `llama_cpp_dart` and
+/// `flutter_llama` both point their CMake config at a `llama.cpp/` directory
+/// that is absent from the published archive — the build succeeds and then the
+/// app fails at runtime because the native library was never packaged.
 ///
-/// The controller exposes a token stream over a MethodChannel:
-///
-///   final gpu = await controller.detectGpu();
-///   await controller.loadModel(modelPath: p, gpuLayers: gpu.recommendedGpuLayers);
-///   controller.generate(prompt: 'hi').listen(print);
+/// Native surface used here:
+///   final llm = NativeLlama.instance;
+///   await llm.initModel(path, nCtx: 4096, nGpuLayers: 99);
+///   await llm.initVision(mmprojPath);           // enables image input
+///   llm.generateResponse(msgs, mediaPaths: [jpg]).listen(print);
 ///
 /// Public surface used by the rest of the app:
 ///   bool isLoaded · Future<bool> loadModel(String) · Stream<String> generateStream(...)
-///   Future<String> generate(...) · Future<void> release()
+///   Future<String> generate(...) · Future<bool> loadVision(...) · Future<String> describeImage(...)
+///   Future<void> stop() · Future<void> release()
 library;
 
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
-import 'package:llama_flutter_android/llama_flutter_android.dart';
+import 'package:native_llama/native_llama.dart';
+
+import '../../domain/models/local_model.dart';
 
 class LlmService {
   static LlmService? _instance;
 
-  final LlamaController _controller = LlamaController();
+  final NativeLlama _llm = NativeLlama.instance;
 
   String? _modelPath;
   bool _isLoaded = false;
   int _nCtx = 2048;
+
+  String? _visionProjectorPath;
+  bool _isVisionLoaded = false;
 
   /// Fires for every generated token (same data as the stream).
   void Function(String token)? onToken;
@@ -36,64 +44,43 @@ class LlmService {
   /// Fires instead of throwing so the UI can surface a message.
   void Function(String error)? onError;
 
-  /// Load progress in [0,1] while [loadModel] runs.
-  double _loadProgress = 0.0;
-  double get loadProgress => _loadProgress;
-
   LlmService._();
 
   static LlmService getInstance() => _instance ??= LlmService._();
 
-  /// GPU capability of the current device.
-  Future<GpuInfo> detectGpu() async {
+  /// Number of usable CPU cores — the plugin picks thread count from this.
+  Future<int> cpuCores() async {
     try {
-      return await _controller.detectGpu();
-    } catch (e) {
-      onError?.call('GPU detection failed: $e');
-      return GpuInfo(
-        vulkanSupported: false,
-        gpuName: 'CPU (unknown)',
-        vulkanApiVersion: -1,
-        deviceLocalMemoryBytes: -1,
-        freeRamBytes: -1,
-        recommendedGpuLayers: 0,
-      );
+      return await _llm.getCpuCores();
+    } catch (_) {
+      return 4;
     }
   }
 
-  /// Load a GGUF model. Returns false (and reports via [onError]) on failure.
-  Future<bool> loadModel(String modelPath, {int nCtx = 2048}) async {
-    _loadProgress = 0.0;
+  /// Load a GGUF chat model. Returns false (and reports via [onError]) on
+  /// failure rather than throwing, so the UI can show a message.
+  ///
+  /// [gpuLayers] is passed straight through; the plugin's CMake bakes in
+  /// `GGML_USE_VULKAN=1`, so anything above 0 engages GPU offload when the
+  /// device exposes a working Vulkan driver.
+  Future<bool> loadModel(
+    String modelPath, {
+    int nCtx = 2048,
+    int gpuLayers = 99,
+  }) async {
     try {
       await release();
       _nCtx = nCtx;
 
-      // Offload whatever the device can actually hold; falls back to 0 (CPU).
-      var gpuLayers = 0;
-      try {
-        final gpu = await _controller.detectGpu();
-        gpuLayers = gpu.recommendedGpuLayers;
-      } catch (_) {
-        // CPU-only path.
-      }
-
-      final progress = _controller.loadProgress.listen((p) {
-        _loadProgress = p;
-      });
-
-      try {
-        await _controller.loadModel(
-          modelPath: modelPath,
-          contextSize: nCtx,
-          gpuLayers: gpuLayers,
-        );
-      } finally {
-        await progress.cancel();
-      }
+      await _llm.initModel(
+        modelPath,
+        nCtx: nCtx,
+        nThreads: await cpuCores(),
+        nGpuLayers: gpuLayers,
+      );
 
       _modelPath = modelPath;
       _isLoaded = true;
-      _loadProgress = 1.0;
       debugPrint('[LlmService] loaded $modelPath (ctx=$nCtx, gpuLayers=$gpuLayers)');
       return true;
     } catch (e) {
@@ -104,41 +91,65 @@ class LlmService {
     }
   }
 
+  /// Load the mmproj projector that makes a vision model usable.
+  ///
+  /// Kept separate from [loadModel] because the projector belongs to the vision
+  /// model, not the chat model, and the two are downloaded independently.
+  Future<bool> loadVision(String mmprojPath) async {
+    try {
+      await _llm.initVision(mmprojPath);
+      _visionProjectorPath = mmprojPath;
+      _isVisionLoaded = true;
+      debugPrint('[LlmService] vision projector loaded: $mmprojPath');
+      return true;
+    } catch (e) {
+      onError?.call('Failed to load vision projector: $e');
+      _isVisionLoaded = false;
+      _visionProjectorPath = null;
+      return false;
+    }
+  }
+
+  /// Turn a list of messages into the plugin's wire format.
+  static List<Map<String, String>> _wire(
+    String prompt, {
+    String? systemPrompt,
+    List<Map<String, String>> history = const [],
+  }) {
+    return [
+      if (systemPrompt != null)
+        {'role': 'system', 'content': systemPrompt},
+      ...history,
+      {'role': 'user', 'content': prompt},
+    ];
+  }
+
   /// Stream generated tokens one at a time.
   ///
-  /// [systemPrompt] and [history] are applied through the model's own chat
-  /// template when supplied; otherwise the raw [prompt] is used.
+  /// Pass [imagePath] to feed a picture to a vision model — requires
+  /// [isVisionLoaded], otherwise the image is silently dropped by the plugin.
   Stream<String> generateStream({
     required String prompt,
     int maxTokens = 512,
     String? systemPrompt,
-    List<ChatMessage> history = const [],
+    List<Map<String, String>> history = const [],
     double temperature = 0.7,
+    double topP = 0.9,
+    int topK = 40,
+    String? imagePath,
   }) async* {
     if (!_isLoaded) {
       throw StateError('Model not loaded. Call loadModel() first.');
     }
 
     try {
-      final Stream<String> out;
-      if (history.isNotEmpty || systemPrompt != null) {
-        final messages = <ChatMessage>[
-          if (systemPrompt != null) ChatMessage(role: 'system', content: systemPrompt),
-          ...history,
-          ChatMessage(role: 'user', content: prompt),
-        ];
-        out = _controller.generateChat(
-          messages: messages,
-          maxTokens: maxTokens,
-          temperature: temperature,
-        );
-      } else {
-        out = _controller.generate(
-          prompt: prompt,
-          maxTokens: maxTokens,
-          temperature: temperature,
-        );
-      }
+      final out = _llm.generateResponse(
+        _wire(prompt, systemPrompt: systemPrompt, history: history),
+        mediaPaths: imagePath == null ? null : [imagePath],
+        temperature: temperature,
+        topP: topP,
+        topK: topK,
+      );
 
       await for (final token in out) {
         if (token.isEmpty) continue;
@@ -156,24 +167,33 @@ class LlmService {
     required String prompt,
     int maxTokens = 512,
     String? systemPrompt,
-    List<ChatMessage> history = const [],
+    List<Map<String, String>> history = const [],
+    String? imagePath,
   }) async {
     final buffer = StringBuffer();
     await for (final token in generateStream(
       prompt: prompt,
-      maxTokens: maxTokens,
       systemPrompt: systemPrompt,
       history: history,
+      imagePath: imagePath,
     )) {
       buffer.write(token);
     }
     return buffer.toString();
   }
 
+  /// Ask the currently loaded vision model to describe [imagePath].
+  Future<String> describeImage(
+    String imagePath, {
+    String instruction = 'Describe this image in detail.',
+  }) {
+    return generate(prompt: instruction, imagePath: imagePath);
+  }
+
   /// Interrupt an in-flight generation.
   Future<void> stop() async {
     try {
-      await _controller.stop();
+      await _llm.abortGeneration();
     } catch (_) {
       // Nothing running.
     }
@@ -182,26 +202,22 @@ class LlmService {
   /// Free native resources.
   Future<void> release() async {
     try {
-      await _controller.dispose();
+      await _llm.dispose();
     } catch (_) {
       // Already disposed / never initialised.
     }
     _isLoaded = false;
     _modelPath = null;
-    _loadProgress = 0.0;
+    _isVisionLoaded = false;
+    _visionProjectorPath = null;
   }
 
   bool get isLoaded => _isLoaded;
   String? get modelPath => _modelPath;
   int get contextSize => _nCtx;
+  bool get isVisionLoaded => _isVisionLoaded;
+  String? get visionProjectorPath => _visionProjectorPath;
 
-  /// Tokens currently occupying the KV cache, if a model is loaded.
-  Future<ContextInfo?> contextInfo() async {
-    if (!_isLoaded) return null;
-    try {
-      return await _controller.getContextInfo();
-    } catch (_) {
-      return null;
-    }
-  }
+  /// True when [model] can answer image questions in the current session.
+  bool canSee(LocalModel model) => _isLoaded && _isVisionLoaded && model.isVision;
 }

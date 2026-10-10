@@ -78,27 +78,38 @@ class EmbeddingService {
     final ids = _tokenize(text);
     final shape = <int>[1, ids.length];
 
-    final inputIds = OrtValueTensor.createTensorWithDataList(
-      Int64List.fromList(ids),
-      shape,
-    );
-    final attentionMask = OrtValueTensor.createTensorWithDataList(
-      Int64List.fromList(List<int>.filled(ids.length, 1)),
-      shape,
-    );
+    // all-MiniLM-L6-v2 exports THREE required int64 inputs, not two:
+    //   input_ids, attention_mask, token_type_ids
+    // Feeding only the first two makes onnxruntime throw on a missing input,
+    // so the feed is built from the session's declared names instead of a
+    // hardcoded pair.
+    final tensors = <OrtValueTensor>[];
 
-    final inputs = <String, OrtValue>{
-      'input_ids': inputIds,
-      'attention_mask': attentionMask,
-    };
+    List<int> dataFor(String name) {
+      if (name.contains('mask')) return List<int>.filled(ids.length, 1);
+      if (name.contains('type')) return List<int>.filled(ids.length, 0);
+      return ids;
+    }
+
+    final inputs = <String, OrtValue>{};
+    for (final declared in session.inputNames) {
+      final tensor = OrtValueTensor.createTensorWithDataList(
+        Int64List.fromList(dataFor(declared.toLowerCase())),
+        shape,
+      );
+      tensors.add(tensor);
+      inputs[declared] = tensor;
+    }
+
     final runOptions = OrtRunOptions();
 
     try {
       final outputs = await session.runAsync(runOptions, inputs);
       if (outputs == null || outputs.isEmpty) return List<double>.filled(_dim, 0.0);
 
-      // Prefer a pooled sentence embedding when the model exposes one,
-      // otherwise mean-pool the token-level output.
+      // This model exports `last_hidden_state` as [batch, seq, 384] — token
+      // level, not pooled — so the mean-pool path is the normal one. The
+      // single-vector branch is kept for exports that do pool for us.
       final OrtValue? firstOut = outputs.first;
       if (firstOut == null) return List<double>.filled(_dim, 0.0);
       final dynamic first = firstOut.value;
@@ -106,8 +117,9 @@ class EmbeddingService {
       if (flat.length == _dim) return _normalise(flat);
       return _meanPoolAndNormalise(flat, ids.length);
     } finally {
-      inputIds.release();
-      attentionMask.release();
+      for (final t in tensors) {
+        t.release();
+      }
     }
   }
 
@@ -187,7 +199,7 @@ class EmbeddingService {
     }
 
     final ids = <int>[vocab['[CLS]'] ?? 101];
-    for (final word in lower.split(RegExp(r'\s+'))) {
+    for (final word in lower.split(RegExp(r'[^a-z0-9]+'))) {
       if (word.isEmpty) continue;
       var start = 0;
       var pieces = <String>[];

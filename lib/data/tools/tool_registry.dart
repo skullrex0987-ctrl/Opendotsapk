@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:geolocator/geolocator.dart';
+import 'dart:io';
+
+import '../services/llm_service.dart';
 
 class ToolRegistry {
   static final ToolRegistry _instance = ToolRegistry._internal();
@@ -91,6 +94,23 @@ class ToolRegistry {
         'query': {'type': 'string', 'description': 'Search query (optional)'},
       },
     );
+
+    _tools['analyze_image'] = ToolDefinition(
+      name: 'analyze_image',
+      description:
+          'Look at a picture on the device with the local vision model '
+          '(Moondream2). Needs a downloaded vision model.',
+      parameters: {
+        'path': {
+          'type': 'string',
+          'description': 'Absolute path to the image file',
+        },
+        'question': {
+          'type': 'string',
+          'description': 'What to ask about the image (optional)',
+        },
+      },
+    );
     
     // Set default permissions
     for (final tool in _tools.keys) {
@@ -138,6 +158,8 @@ class ToolRegistry {
         return await _executeCreateNote(params);
       case 'read_notes':
         return await _executeReadNotes(params);
+      case 'analyze_image':
+        return await _executeAnalyzeImage(params);
       default:
         return jsonEncode({'error': 'Unknown tool: $toolName'});
     }
@@ -268,6 +290,50 @@ class ToolRegistry {
       'notes': [],
       'query': query,
     });
+  }
+
+  /// Run the local vision model over an image already on the device.
+  ///
+  /// Unlike the other device tools this one is fully implemented — the heavy
+  /// lifting is llama.cpp's mtmd path, reached through `LlmService`. It fails
+  /// loudly (rather than inventing an answer) when no vision model is loaded,
+  /// because a fabricated description of a photo is worse than no description.
+  Future<String> _executeAnalyzeImage(Map<String, dynamic> params) async {
+    final path = params['path'] as String?;
+    if (path == null || path.isEmpty) {
+      return jsonEncode({'error': 'analyze_image requires a "path" parameter'});
+    }
+
+    final file = File(path);
+    if (!await file.exists()) {
+      return jsonEncode({'error': 'Image not found: $path'});
+    }
+
+    final llm = LlmService.getInstance();
+    if (!llm.isLoaded) {
+      return jsonEncode({
+        'error': 'No model loaded. Open Settings -> Models and download one first.',
+      });
+    }
+    if (!llm.isVisionLoaded) {
+      return jsonEncode({
+        'error': 'No vision model loaded. Download Moondream2 in Settings -> Models '
+            'and select it as the vision model.',
+      });
+    }
+
+    final question = (params['question'] as String?)?.trim();
+    try {
+      final answer = await llm.describeImage(
+        path,
+        instruction: (question == null || question.isEmpty)
+            ? 'Describe this image in detail.'
+            : question,
+      );
+      return jsonEncode({'status': 'success', 'result': answer});
+    } catch (e) {
+      return jsonEncode({'error': 'Vision inference failed: $e'});
+    }
   }
   
   List<String> _parseDuckDuckGoResults(String html) {

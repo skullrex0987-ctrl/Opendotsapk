@@ -18,6 +18,7 @@ class AppConstants {
 
   /// Key in shared_preferences holding the selected vision model id.
   static const String prefActiveVisionId = 'active_vision_id';
+  static const String prefActiveEmbeddingId = 'active_embedding_id';
 
   // --------------------------------------------------------- inference settings
   static const int defaultContextSize = 2048;

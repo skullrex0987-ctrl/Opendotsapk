@@ -57,18 +57,33 @@ jobs:
           cp build/app/outputs/flutter-apk/app-release.apk \
              out/localmind-release.apk
 
-      # --- gate: the app is useless without the native llama.cpp runtime ---
+      # --- gate: the app is useless without the native runtimes --------------
+      # Two silent-failure modes bit this project before, both because the
+      # plugin's CMake pointed at a llama.cpp/ tree that the pub archive never
+      # shipped: the build succeeded and the APK shipped with no native code at
+      # all. Fail loudly here instead of shipping a chat app that cannot chat.
       - name: Verify native libraries
         run: |
           echo "### .so files shipped in the APK"
           unzip -l out/localmind-release.apk | grep -E "\.so$" || true
           echo
-          if unzip -l out/localmind-release.apk | grep -q "libllama"; then
-            echo "OK: llama.cpp native runtime is present."
+          fail=0
+          for lib in libllama libggml libonnxruntime; do
+            if unzip -l out/localmind-release.apk | grep -q "$lib"; then
+              echo "OK: $lib present."
+            else
+              echo "::error::$lib missing - on-device inference would fail at runtime."
+              fail=1
+            fi
+          done
+          # native_llama vendors tools/mtmd; without it the vision catalog
+          # entry would download 1.3 GB and then never load anything.
+          if unzip -l out/localmind-release.apk | grep -q "libmtmd"; then
+            echo "OK: mtmd vision runtime present."
           else
-            echo "::error::libllama*.so missing - local inference would fail at runtime."
-            exit 1
+            echo "::warning::libmtmd not found - vision (Moondream2) will not work."
           fi
+          exit $fail
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

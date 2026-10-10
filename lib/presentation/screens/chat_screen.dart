@@ -7,6 +7,7 @@ import '../providers/providers.dart';
 import '../widgets/message_bubble.dart';
 import '../../core/constants/app_constants.dart';
 import '../../data/services/model_manager.dart';
+import '../../data/services/embedding_service.dart';
 import '../../domain/models/models.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
@@ -314,9 +315,9 @@ class ModelSelectorDialog extends ConsumerWidget {
         children: [
           ListTile(
             leading: const Icon(Icons.download),
-            title: const Text('Download Default Model'),
+            title: const Text('Load Selected Model'),
             subtitle: const Text('Qwen2.5-1.5B-Instruct Q4_K_M'),
-            onTap: () => _downloadModel(context, ref),
+            onTap: () => _loadSelectedModels(context, ref),
           ),
           const Divider(),
           ListTile(
@@ -344,67 +345,85 @@ class ModelSelectorDialog extends ConsumerWidget {
     );
   }
   
-  /// Bind the model the user selected in Settings -> Models.
+  /// Load the models the user selected in Settings -> Models.
   ///
-  /// Downloading is handled by the Models screen; this only loads an already
-  /// downloaded GGUF into the native runtime.
-  Future<void> _downloadModel(BuildContext context, WidgetRef ref) async {
+  /// Downloading lives in the Models screen; this binds what is already on disk
+  /// into the native runtime: the chat GGUF first, then the vision projector if
+  /// one is selected, then the ONNX encoder behind Memory search.
+  Future<void> _loadSelectedModels(BuildContext context, WidgetRef ref) async {
+    final manager = ModelManager.getInstance();
+    final llmService = ref.read(llmServiceProvider);
+
+    final chat = await manager.activeLlm();
+    if (!await manager.isInstalled(chat)) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'No chat model downloaded yet. '
+              'Open Settings -> Models and pick one.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => const Center(child: CircularProgressIndicator()),
     );
 
-    try {
-      final manager = ModelManager.getInstance();
-      final active = await manager.activeLlm();
+    var ok = false;
+    var message = 'Failed to load model';
 
-      if (!await manager.isInstalled(active)) {
-        if (context.mounted) Navigator.pop(context);
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                '${active.displayName} is not downloaded yet. '
-                'Open Settings -> Models to download it.',
-              ),
-            ),
-          );
+    try {
+      ok = await llmService.loadModel(await manager.weightPath(chat));
+
+      // Vision is optional — a missing projector must not fail the chat model.
+      final vision = await manager.activeVision();
+      if (ok && vision != null) {
+        final projector = await manager.projectorPath(vision);
+        if (projector != null) {
+          final visionOk = await llmService.loadVision(projector);
+          if (!visionOk) {
+            message = '${chat.displayName} loaded, but vision failed to attach.';
+          }
         }
-        return;
       }
 
-      final modelPath = await manager.weightPath(active);
-      final llmService = ref.read(llmServiceProvider);
-      final success = await llmService.loadModel(modelPath);
-      
-      Navigator.pop(context); // Close progress
-      
-      if (success) {
-        await ref.read(settingsProvider.notifier).updateSetting('model_path', modelPath);
-        if (context.mounted) {
-          Navigator.pop(context); // Close dialog
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Model loaded successfully!')),
-          );
+      // Embeddings power Memory search; silent failure is fine, the app
+      // simply stores memories without retrieving them.
+      final embed = await manager.activeEmbedding();
+      if (embed != null) {
+        final embedService = EmbeddingService.getInstance();
+        if (!embedService.isLoaded) {
+          await embedService.loadModel(await manager.weightPath(embed));
         }
-      } else {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to load model')),
-          );
-        }
+      }
+
+      if (context.mounted) {
+        await ref
+            .read(settingsProvider.notifier)
+            .updateSetting('model_path', await manager.weightPath(chat));
+      }
+      if (ok && message == 'Failed to load model') {
+        message = '${chat.displayName} ready.';
       }
     } catch (e) {
-      Navigator.pop(context);
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
-      }
+      ok = false;
+      message = 'Error: $e';
     }
+
+    if (context.mounted) Navigator.of(context).pop(); // progress dialog
+    if (!context.mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
-  
+
   Future<void> _loadModelFromStorage(BuildContext context, WidgetRef ref) async {
     // In production, use file picker
     // For now, show placeholder

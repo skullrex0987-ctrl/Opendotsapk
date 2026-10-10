@@ -10,7 +10,7 @@
 /// embedding a completely separate inference engine.
 library;
 
-enum ModelKind { llm, vision }
+enum ModelKind { llm, vision, embedding }
 
 class LocalModel {
   /// Stable id persisted in settings.
@@ -31,6 +31,15 @@ class LocalModel {
   final String? projectorFileName;
   final String? projectorUrl;
 
+  /// Any other files that must sit next to the weights (e.g. a WordPiece
+  /// `vocab.txt` for the embedding model).
+  final List<({String name, String url, int minBytes})> extraFiles;
+
+  /// Smallest byte count that still counts as a complete copy of a file.
+  /// The shared 1 MB floor in [isInstalled] is right for GGUF weights but would
+  /// reject a 227 KB `vocab.txt` forever.
+  final int minBytes;
+
   /// Recommended context window for this model.
   final int contextSize;
 
@@ -47,11 +56,14 @@ class LocalModel {
     required this.approxBytes,
     this.projectorFileName,
     this.projectorUrl,
+    this.extraFiles = const [],
+    this.minBytes = 1024 * 1024,
     this.contextSize = 2048,
     this.ramHint = '',
   });
 
   bool get isVision => kind == ModelKind.vision;
+  bool get isEmbedding => kind == ModelKind.embedding;
 
   String get sizeLabel {
     if (approxBytes >= 1 << 30) {
@@ -65,6 +77,7 @@ class LocalModel {
         (name: fileName, url: url),
         if (projectorFileName != null && projectorUrl != null)
           (name: projectorFileName!, url: projectorUrl!),
+        ...extraFiles.map((f) => (name: f.name, url: f.url)),
       ];
 }
 
@@ -123,13 +136,48 @@ class ModelCatalog {
     ramHint: '~1.6 GB',
   );
 
+  /// --------------------------------------------------------- embedding model
+  ///
+  /// Verified against the published ONNX graph: inputs are `input_ids`,
+  /// `attention_mask` AND `token_type_ids` (all int64), output is
+  /// `last_hidden_state` [batch, seq, 384] — token level, so the app
+  /// mean-pools and L2-normalises. `vocab.txt` is not optional: without it the
+  /// service falls back to a hash tokenizer and retrieval quality collapses.
+  static const LocalModel miniLm6 = LocalModel(
+    id: 'all-minilm-l6-v2',
+    displayName: 'all-MiniLM-L6-v2 (embeddings)',
+    description: 'Powers Memory search. Required for RAG.',
+    kind: ModelKind.embedding,
+    fileName: 'minilm-l6-v2.onnx',
+    url: 'https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx',
+    approxBytes: 91000000,
+    minBytes: 20 * 1024 * 1024,
+    extraFiles: [
+      (
+        name: 'vocab.txt',
+        url: 'https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/vocab.txt',
+        minBytes: 100 * 1024,
+      ),
+    ],
+    ramHint: '~120 MB',
+  );
+
   /// Models the user can pick as the chat brain.
   static const List<LocalModel> llms = [qwen05b, smolLm2_360m, qwen15b];
 
   /// Models the user can pick for image understanding.
   static const List<LocalModel> visionModels = [moondream2];
 
-  static const List<LocalModel> all = [qwen05b, smolLm2_360m, qwen15b, moondream2];
+  /// Models the user can pick for memory/retrieval.
+  static const List<LocalModel> embeddingModels = [miniLm6];
+
+  static const List<LocalModel> all = [
+    qwen05b,
+    smolLm2_360m,
+    qwen15b,
+    moondream2,
+    miniLm6,
+  ];
 
   static LocalModel? byId(String? id) {
     if (id == null) return null;

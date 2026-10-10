@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/providers.dart';
 import '../../core/constants/app_constants.dart';
-import 'chat_screen.dart' show ModelSelectorDialog;
+import 'models_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -20,12 +20,12 @@ class SettingsScreen extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Model Management
-          const SectionTitle(title: 'Model'),
-          const ModelSettings(),
-          
+          // Model Management — the real chooser/downloader.
+          const SectionTitle(title: 'Models'),
+          const ModelsTile(),
+
           const Divider(),
-          
+
           // Tool Permissions
           const SectionTitle(title: 'Tool Permissions'),
           PermissionList(permissions: permissions),
@@ -80,34 +80,28 @@ class SectionTitle extends StatelessWidget {
   }
 }
 
-/// Model settings widget
-class ModelSettings extends ConsumerWidget {
-  const ModelSettings({super.key});
+/// Entry point into the Models chooser/downloader.
+class ModelsTile extends ConsumerWidget {
+  const ModelsTile({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final settings = ref.watch(settingsProvider);
     final llmService = ref.read(llmServiceProvider);
-    
+
     return ListTile(
       leading: const Icon(Icons.model_training),
-      title: const Text('Model'),
+      title: const Text('Download and select models'),
       subtitle: Text(
-        settings['model_path'] != null 
-            ? 'Loaded: ${settings['model_path']}'
+        llmService.isLoaded
+            ? 'Loaded: ${llmService.modelPath}'
             : 'No model loaded',
       ),
       trailing: llmService.isLoaded
           ? const Icon(Icons.check_circle, color: Colors.green)
           : const Icon(Icons.warning, color: Colors.orange),
-      onTap: () => _showModelDialog(context, ref),
-    );
-  }
-  
-  void _showModelDialog(BuildContext context, WidgetRef ref) {
-    showDialog(
-      context: context,
-      builder: (context) => ModelSelectorDialog(),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const ModelsScreen()),
+      ),
     );
   }
 }
