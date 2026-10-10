@@ -124,7 +124,7 @@ These three do native/binding work and their pub.dev availability should be
 confirmed before the first build — if one is missing, replace it with an
 equivalent that exists:
 
-- `llama_cpp_dart` — llama.cpp FFI bindings
+- `llama_flutter_android` — llama.cpp bindings (bundles the llama.cpp C++ sources so the APK really contains `libllama.so`; `llama_cpp_dart`/`flutter_llama` ship without them and produce an APK with no LLM)
 - `onnxruntime` — ONNX Runtime bindings
 - `sqlite3` / sqlite-vec — the vector table creation needs the sqlite-vec
   extension loaded at runtime, which is a native step not covered by a pub

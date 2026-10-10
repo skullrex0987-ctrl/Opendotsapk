@@ -46,8 +46,10 @@ android {
         versionCode = flutterVersionCode.toInteger()
         versionName = flutterVersionName
         ndk {
-            // Keep ABI set small so APK size and build time stay reasonable.
-            abiFilters "arm64-v8a", "armeabi-v7a"
+            // arm64-v8a only: llama_flutter_android compiles llama.cpp for
+            // arm64-v8a exclusively, so shipping other ABIs would only produce
+            // an install that can never load a model.
+            abiFilters "arm64-v8a"
         }
     }
 

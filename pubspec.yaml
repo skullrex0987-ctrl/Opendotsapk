@@ -16,8 +16,9 @@ dependencies:
   flutter_riverpod: ^2.5.1
   riverpod_annotation: ^2.3.5
 
-  # Local LLM (llama.cpp FFI bindings — API verified for 0.2.x)
-  llama_cpp_dart: ^0.2.2
+  # Local LLM (llama.cpp via MethodChannel; bundles llama.cpp sources in the
+  # pub archive so the NDK actually produces libllama.so in the APK)
+  llama_flutter_android: ^0.2.6
 
   # Vector database / SQLite
   sqflite: ^2.3.3
