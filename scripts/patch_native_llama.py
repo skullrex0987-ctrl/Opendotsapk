@@ -1,144 +1,130 @@
 #!/usr/bin/env python3
 """Make native_llama 1.0.1 build on Android.
 
-The published package ships an `ios/shared_cpp` tree that the Android CMake
-config reuses (android/src/main/cpp/CMakeLists.txt reaches it via
-../../../../ios/shared_cpp). That tree contains ggml-vulkan, but the ggml-cpu
-half has no flash-attention kernels:
+The package forces Vulkan on from two places, and the ggml tree it vendors
+cannot support it:
 
-    ld.lld: error: undefined symbol: flash_attn_f32_f16_f32_data
+1. `android/build.gradle.kts` hard-codes
+       cppFlags("-std=c++17", "-DGGML_USE_VULKAN=1", "-DGGML_VULKAN_PERF_FA=0")
+   so `ggml-backend-reg.cpp` compiles the `register_backend(ggml_backend_vk_reg())`
+   call even when no Vulkan backend is linked:
 
-so the Vulkan backend can never link against it. Three separate places force
-Vulkan on, and all of them have to go or the build fails at a different symbol
-each time:
+       ld.lld: error: undefined symbol: ggml_backend_vk_reg
 
-  1. CMakeLists.txt          set(GGML_VULKAN ON ... FORCE)
-                              target_include_directories(ggml-vulkan ...)  <- errors
-                                                            when the target is absent
-  2. android/build.gradle.kts  cppFlags/arguments "-DGGML_USE_VULKAN=1"
+2. `android/src/main/cpp/CMakeLists.txt` does `set(GGML_VULKAN ON ... FORCE)`.
+   With Vulkan actually built, `ggml-vulkan` then references flash-attention
+   kernels that the vendored `ggml-cpu` subset does not contain:
 
-Leaving (2) in place produces a *different* failure after (1) is fixed:
-`ggml-backend-reg.cpp` is still compiled with GGML_USE_VULKAN defined, so it
-emits a call to `ggml_backend_vk_reg`, which nothing defines:
+       ld.lld: error: undefined symbol: flash_attn_f32_f16_f32_data
 
-    ld.lld: error: undefined symbol: ggml_backend_vk_reg
+So strip the Gradle-side define, switch the CMake option off, and guard the
+`target_include_directories(ggml-vulkan ...)` call, which errors outright when
+the target no longer exists.
 
-Inference then runs on the CPU backend, which is what a 0.5B Q4 model wants
-anyway. Run once, right after `flutter pub get`, before the Gradle build.
-Idempotent: a second run reports "nothing to do".
+Inference then runs on llama.cpp's CPU backend, which is what the 0.5B-class
+models this app ships want anyway.
+
+Run once, after `flutter pub get` and before the Gradle build.
 """
 
 from __future__ import annotations
 
 import os
-import re
-import shutil
 import sys
 from pathlib import Path
 
-# 1. CMake: stop forcing Vulkan, and guard the include block on the target.
-VULKAN_ON = 'set(GGML_VULKAN ON CACHE BOOL "Enable Vulkan" FORCE)'
-VULKAN_OFF = (
+# ---------------------------------------------------------------- CMakeLists
+
+CMAKE_VULKAN_ON = 'set(GGML_VULKAN ON CACHE BOOL "Enable Vulkan" FORCE)'
+CMAKE_VULKAN_OFF = (
     'set(GGML_VULKAN OFF CACHE BOOL '
-    '"Vulkan off: vendored ggml-cpu has no flash-attn kernels" FORCE)'
+    '"off: vendored ggml-cpu has no flash-attn kernels" FORCE)'
 )
 
-INCLUDE_BLOCK = """target_include_directories(ggml-vulkan PRIVATE
+CMAKE_INCLUDE_BLOCK = """target_include_directories(ggml-vulkan PRIVATE
     "${vulkanheaders_SOURCE_DIR}/include"
     "${spirvheaders_SOURCE_DIR}/include"
 )"""
 
-GUARDED_BLOCK = """if(TARGET ggml-vulkan)
+CMAKE_GUARDED_BLOCK = """if(TARGET ggml-vulkan)
     target_include_directories(ggml-vulkan PRIVATE
         "${vulkanheaders_SOURCE_DIR}/include"
         "${spirvheaders_SOURCE_DIR}/include"
     )
 endif()"""
 
-# 2. Gradle: strip the compile flags that would re-enable GGML_USE_VULKAN in
-#    C++ land. Kotlin source sets do not need Vulkan when the C++ side is off.
-VULKAN_CPPFLAG = re.compile(
-    r'^\s*"-DGGML_(?:USE_)?VULKAN[A-Z_]*=[^"]*",?\s*\n', re.MULTILINE
-)
+# ------------------------------------------------------------- build.gradle
+
+GRADLE_FLAG = "-DGGML_USE_VULKAN=1"
 
 
-def patch_cmake(text: str) -> str:
-    text = text.replace(VULKAN_ON, VULKAN_OFF)
-    if INCLUDE_BLOCK in text:
-        text = text.replace(INCLUDE_BLOCK, GUARDED_BLOCK)
-    return text
+def patch_cmake(path: Path) -> bool:
+    original = text = path.read_text()
+
+    if CMAKE_VULKAN_ON in text:
+        text = text.replace(CMAKE_VULKAN_ON, CMAKE_VULKAN_OFF)
+
+    if CMAKE_INCLUDE_BLOCK in text:
+        text = text.replace(CMAKE_INCLUDE_BLOCK, CMAKE_GUARDED_BLOCK)
+    elif "if(TARGET ggml-vulkan)" not in text:
+        raise SystemExit("::error::unrecognised ggml-vulkan block in %s" % path)
+
+    if text == original:
+        return False
+    path.write_text(text)
+    return True
 
 
-def patch_gradle(text: str) -> str:
-    # "-DGGML_USE_VULKAN=1" / "-DGGML_VULKAN_PERF_FA=0" on their own lines.
-    return VULKAN_CPPFLAG.sub("", text)
-
-
-def package_roots() -> list[Path]:
-    """Where pub may have unpacked native_llama.
-
-    PUB_CACHE can point anywhere and the host directory is not always
-    pub.dev, so glob rather than assume a layout.
-    """
-    roots: list[Path] = []
-    env = os.environ.get("PUB_CACHE")
-    if env:
-        roots.append(Path(env))
-    roots.append(Path.home() / ".pub-cache")
-    roots.append(Path.cwd() / ".dart_tool")
-
-    found: list[Path] = []
-    for root in roots:
-        if not root.is_dir():
-            continue
-        for cmake in sorted(root.glob("**/native_llama-*/android/src/main/cpp/CMakeLists.txt")):
-            # <pkg>/android/src/main/cpp/CMakeLists.txt -> parents[4] == <pkg>
-            pkg = cmake.parents[4]
-            if pkg.is_dir() and pkg not in found:
-                found.append(pkg)
-    return found
+def patch_gradle(path: Path) -> bool:
+    original = text = path.read_text()
+    kept = [ln for ln in text.splitlines(keepends=True) if GRADLE_FLAG not in ln]
+    text = "".join(kept)
+    if text == original:
+        return False
+    path.write_text(text)
+    return True
 
 
 def main() -> int:
-    packages = package_roots()
-    if not packages:
-        print("::error::native_llama not found; searched PUB_CACHE, ~/.pub-cache, .dart_tool")
+    roots: list[Path] = []
+    if os.environ.get("PUB_CACHE"):
+        roots.append(Path(os.environ["PUB_CACHE"]))
+    roots.append(Path.home() / ".pub-cache")
+    roots.append(Path.cwd() / ".dart_tool")
+
+    seen: set[Path] = set()
+    bases: list[Path] = []
+    for root in roots:
+        if root in seen or not root.is_dir():
+            continue
+        seen.add(root)
+        bases.extend(sorted(root.glob("**/native_llama-*/android")))
+
+    if not bases:
+        print("::error::native_llama not found; searched:")
+        for root in seen:
+            print("  - %s" % root)
         return 1
 
-    changed = 0
-    seen = 0
-    for pkg in packages:
-        for rel, patcher in (
-            ("android/src/main/cpp/CMakeLists.txt", patch_cmake),
-            ("android/build.gradle.kts", patch_gradle),
-            ("android/build.gradle", patch_gradle),
-        ):
-            target = pkg / rel
-            if not target.is_file():
-                continue
-            original = target.read_text()
-            patched = patcher(original)
-            seen += 1
-            if patched != original:
-                if not os.access(target, os.W_OK):
-                    print("::error::%s is not writable (read-only pub cache?)" % target)
-                    return 1
-                shutil.copymode(target, target)
-                target.write_text(patched)
-                print("patched %s" % rel)
-                changed += 1
-            else:
-                print("no change needed in %s" % rel)
+    patched = 0
+    for base in bases:
+        cmake = base / "src/main/cpp/CMakeLists.txt"
+        gradle = base / "build.gradle.kts"
 
-    if seen == 0:
-        print("::error::found native_llama but none of the files to patch exist")
-        return 1
-    if changed:
-        print("Vulkan disabled in %d file(s); inference runs on the CPU backend" % changed)
+        if cmake.is_file() and patch_cmake(cmake):
+            patched += 1
+            print("patched %s (GGML_VULKAN=OFF, include guarded)" % cmake)
+
+        if gradle.is_file() and patch_gradle(gradle):
+            patched += 1
+            print("patched %s (dropped %s)" % (gradle, GRADLE_FLAG))
+
+    if patched == 0:
+        print("native_llama already patched; nothing to do")
     else:
-        print("native_llama already patched (%d file(s) checked, nothing to do)" % seen)
+        print("Vulkan disabled in %d file(s); inference runs on CPU" % patched)
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())
