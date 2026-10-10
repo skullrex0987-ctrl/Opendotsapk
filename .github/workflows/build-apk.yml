@@ -49,7 +49,7 @@ jobs:
           cd android && ./gradlew projects --console=plain -q 2>&1 | head -60; cd ..
 
       - name: Build release APK
-        run: flutter build apk --release
+        run: flutter build apk --release --target-platform android-arm64
 
       - name: Rename APK
         run: |
