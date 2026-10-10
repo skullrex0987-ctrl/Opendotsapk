@@ -15,6 +15,7 @@ import '../../core/constants/app_constants.dart';
 import '../../core/utils/log.dart';
 import '../../core/utils/text_utils.dart';
 import '../../data/services/document_service.dart';
+import '../../data/services/cloud_service.dart';
 import '../../data/services/model_manager.dart';
 import '../../data/services/embedding_service.dart';
 import '../../data/services/router_service.dart';
@@ -323,7 +324,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   /// Pick and ingest a document, then hand it to the memory store.
   Future<void> _pickDocument() async {
     try {
-      final result = await FilePicker.platform.pickFiles(
+      final result = await FilePicker.pickFiles(
         type: FileType.any,
         withData: false,
       );
@@ -371,7 +372,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         if (embed.isLoaded && doc.chunks.isNotEmpty) {
           final vectors = <List<double>>[];
           for (final chunk in doc.chunks) {
-            vectors.add(await embed.embed(chunk));
+            vectors.add(await embed.generateEmbedding(chunk));
           }
           await db.insertChunks(
             documentId: id,
@@ -445,7 +446,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final router = RouterService.instance;
     final decision = router.decide(
       prompt: '$display$docCtx',
-      config: RouterConfig(
+      config: RoutingConfig(
         mode: '${settings['cloud_mode'] ?? 'auto'}',
         privateMode: settings['private_mode'] as bool? ?? false,
         preferLocalOnMetered:
@@ -827,7 +828,7 @@ class ModelSelectorDialog extends ConsumerWidget {
     // Pick any GGUF from the device and bind it directly — useful for models
     // the catalog does not know about.
     try {
-      final result = await FilePicker.platform.pickFiles(
+      final result = await FilePicker.pickFiles(
         type: FileType.any,
         withData: false,
       );

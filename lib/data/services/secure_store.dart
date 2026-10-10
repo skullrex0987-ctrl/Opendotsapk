@@ -39,7 +39,7 @@ class SecureStore {
       'cloud.config.$providerId';
 
   final FlutterSecureStorage _storage = const FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+    aOptions: AndroidOptions(),
   );
 
   bool _unavailable = false;

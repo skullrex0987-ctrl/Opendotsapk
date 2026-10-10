@@ -25,7 +25,7 @@ void main() {
       (provider: CloudCatalog.byId('anthropic')!,
           modelId: 'claude-3-5-haiku-latest');
 
-  const auto = RouterConfig(mode: 'auto');
+  const auto = RoutingConfig(mode: 'auto');
 
   group('hard rules', () {
     test('no provider configured always stays local', () {
@@ -38,7 +38,7 @@ void main() {
       router.setCandidates([openAi()]);
       final d = router.decide(
         prompt: 'explain quantum computing in depth',
-        config: const RouterConfig(mode: 'auto', privateMode: true),
+        config: const RoutingConfig(mode: 'auto', privateMode: true),
       );
       expect(d.isCloud, isFalse);
       expect(d.reason.toLowerCase(), contains('private'));
@@ -48,7 +48,7 @@ void main() {
       router.setCandidates([openAi()]);
       final d = router.decide(
         prompt: 'hi',
-        config: const RouterConfig(mode: 'cloud', privateMode: true),
+        config: const RoutingConfig(mode: 'cloud', privateMode: true),
       );
       expect(d.isCloud, isFalse);
     });
@@ -58,7 +58,7 @@ void main() {
       router.isOnline = false;
       final d = router.decide(
         prompt: 'anything',
-        config: const RouterConfig(mode: 'cloud'),
+        config: const RoutingConfig(mode: 'cloud'),
       );
       expect(d.isCloud, isFalse);
       expect(d.reason.toLowerCase(), contains('offline'));
@@ -121,7 +121,7 @@ void main() {
       router.setCandidates([openAi()]);
       final d = router.decide(
         prompt: 'write a complex algorithm with a proof',
-        config: const RouterConfig(mode: 'local'),
+        config: const RoutingConfig(mode: 'local'),
         localModelReady: true,
       );
       expect(d.isCloud, isFalse);
@@ -131,7 +131,7 @@ void main() {
       router.setCandidates([openAi()]);
       final d = router.decide(
         prompt: 'hi',
-        config: const RouterConfig(mode: 'cloud'),
+        config: const RoutingConfig(mode: 'cloud'),
         localModelReady: true,
       );
       expect(d.isCloud, isTrue);
@@ -195,7 +195,7 @@ void main() {
       router.isMetered = true;
       final d = router.decide(
         prompt: 'x' * 2000,
-        config: const RouterConfig(
+        config: const RoutingConfig(
           mode: 'auto',
           preferLocalOnMetered: false,
         ),

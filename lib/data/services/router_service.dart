@@ -55,7 +55,7 @@ class RouteDecision {
   );
 }
 
-class RouterConfig {
+class RoutingConfig {
   /// 'local' | 'cloud' | 'auto'
   final String mode;
 
@@ -68,7 +68,7 @@ class RouterConfig {
   /// Turns longer than this (characters) push toward cloud.
   final int longInputThreshold;
 
-  const RouterConfig({
+  const RoutingConfig({
     this.mode = 'auto',
     this.privateMode = false,
     this.preferLocalOnMetered = true,
@@ -112,7 +112,7 @@ class RouterService {
   /// and [localVisionReady] whether the on-device model can actually see.
   RouteDecision decide({
     required String prompt,
-    required RouterConfig config,
+    required RoutingConfig config,
     bool hasImages = false,
     bool localVisionReady = false,
     bool localModelReady = false,
@@ -199,7 +199,7 @@ class RouterService {
 
   RouteDecision _score(
     String prompt,
-    RouterConfig config, {
+    RoutingConfig config, {
     bool hasImages = false,
   }) {
     var cloudScore = 0;

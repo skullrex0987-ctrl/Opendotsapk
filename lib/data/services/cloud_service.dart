@@ -451,11 +451,11 @@ class CloudService {
   // ------------------------------------------------------------- plumbing
 
   /// Open an SSE stream and yield `data:` payloads.
-  Future<Stream<String>> _sseLines(
+  Stream<String> _sseLines(
     Uri uri,
     Map<String, String> headers,
     Map<String, dynamic> body,
-  ) async {
+  ) async* {
     final request = http.Request('POST', uri)
       ..headers.addAll(headers)
       ..body = jsonEncode(body);
@@ -470,7 +470,7 @@ class CloudService {
       );
     }
 
-    return response.stream
+    yield* response.stream
         .transform(utf8.decoder)
         .transform(const LineSplitter())
         .where((l) => l.startsWith('data:'))
@@ -478,7 +478,7 @@ class CloudService {
         .where((l) => l.isNotEmpty);
   }
 
-  Future<Stream<String>> _sseFromRequest(http.Request request) async {
+  Stream<String> _sseFromRequest(http.Request request) async* {
     final response = await _client.send(request);
     if (response.statusCode >= 400) {
       final text = await response.stream.bytesToString();
@@ -487,7 +487,7 @@ class CloudService {
         statusCode: response.statusCode,
       );
     }
-    return response.stream
+    yield* response.stream
         .transform(utf8.decoder)
         .transform(const LineSplitter())
         .where((l) => l.startsWith('data:'))

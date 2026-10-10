@@ -23,6 +23,12 @@ class EmbeddingService {
   int _dim = 384;
   int _maxTokens = 128;
 
+  /// Whether a model is loaded and ready to embed.
+  bool get isLoaded => _isLoaded;
+
+  /// Embedding width of the loaded model.
+  int get dimension => _dim;
+
   /// WordPiece vocabulary (token -> id) when a `vocab.txt` sits beside the
   /// model. Without it the fallback hash tokenizer is used, which is enough to
   /// keep the pipeline running but degrades retrieval quality.

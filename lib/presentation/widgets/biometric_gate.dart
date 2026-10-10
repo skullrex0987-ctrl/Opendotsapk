@@ -13,7 +13,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:local_auth/local_auth.dart';
 
-import '../core/utils/log.dart';
+import '../../core/utils/log.dart';
 
 class BiometricGate extends StatefulWidget {
   final Widget child;
@@ -96,11 +96,10 @@ class _BiometricGateState extends State<BiometricGate>
 
       final ok = await _auth.authenticate(
         localizedReason: 'Unlock LocalMind',
-        options: const AuthenticationOptions(
-          stickyAuth: true,
-          biometricOnly: false,
-          useErrorDialogs: true,
-        ),
+        // local_auth 3.x flattened these: `options:`/`stickyAuth` are gone.
+        biometricOnly: false,
+        sensitiveTransaction: true,
+        persistAcrossBackgrounding: true,
       );
 
       if (!mounted) return;
