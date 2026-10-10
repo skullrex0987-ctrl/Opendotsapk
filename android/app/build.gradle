@@ -41,7 +41,10 @@ android {
 
     defaultConfig {
         applicationId = "com.localmind.localmind"
-        minSdk = 26
+        // 28, not 26: native_llama declares minSdk 28 because its inference
+        // path uses SharedMemory (API 27+). Forcing 26 would produce an app
+        // that installs on Android 8 and then fails when the model is loaded.
+        minSdk = 28
         targetSdk = 35
         versionCode = flutterVersionCode.toInteger()
         versionName = flutterVersionName
