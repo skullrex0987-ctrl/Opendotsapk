@@ -3,7 +3,7 @@
 # Runs once when the Codespace is created. Takes ~4-6 minutes.
 set -euo pipefail
 
-FLUTTER_VERSION="3.24.0"
+FLUTTER_VERSION="3.47.7"
 FLUTTER_DIR="$HOME/flutter"
 ANDROID_SDK="$HOME/android-sdk"
 CMDLINE_TOOLS_URL="https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
