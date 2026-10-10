@@ -81,12 +81,17 @@ jobs:
               fail=1
             fi
           done
-          # native_llama vendors tools/mtmd; without it the vision catalog
-          # entry would download 1.3 GB and then never load anything.
-          if unzip -l out/localmind-release.apk | grep -q "libmtmd"; then
-            echo "OK: mtmd vision runtime present."
+          # native_llama vendors tools/mtmd, but compiles it straight into
+          # libnative_llama.so rather than shipping a separate libmtmd.so — so
+          # check the symbols, not a filename, or this warns forever.
+          unzip -o -q out/localmind-release.apk \
+            "lib/arm64-v8a/libnative_llama.so" -d "$RUNNER_TEMP/apkcheck"
+          if strings "$RUNNER_TEMP/apkcheck/lib/arm64-v8a/libnative_llama.so" \
+               | grep -qiE "mtmd|ggml_clip"; then
+            echo "OK: mtmd/CLIP vision code is linked in."
           else
-            echo "::warning::libmtmd not found - vision (Moondream2) will not work."
+            echo "::error::no mtmd symbols in libnative_llama.so - vision will not work."
+            fail=1
           fi
           exit $fail
 
