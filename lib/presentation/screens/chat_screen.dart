@@ -6,6 +6,7 @@ import 'dart:async';
 import '../providers/providers.dart';
 import '../widgets/message_bubble.dart';
 import '../../core/constants/app_constants.dart';
+import '../../data/services/model_manager.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
   const ChatScreen({super.key});
@@ -342,22 +343,44 @@ class ModelSelectorDialog extends ConsumerWidget {
     );
   }
   
+  /// Bind the model the user selected in Settings -> Models.
+  ///
+  /// Downloading is handled by the Models screen; this only loads an already
+  /// downloaded GGUF into the native runtime.
   Future<void> _downloadModel(BuildContext context, WidgetRef ref) async {
-    // Show progress dialog
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => const Center(child: CircularProgressIndicator()),
     );
-    
+
     try {
+      final manager = ModelManager.getInstance();
+      final active = await manager.activeLlm();
+
+      if (!await manager.isInstalled(active)) {
+        if (context.mounted) Navigator.pop(context);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                '${active.displayName} is not downloaded yet. '
+                'Open Settings -> Models to download it.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
+      final modelPath = await manager.weightPath(active);
       final llmService = ref.read(llmServiceProvider);
-      final success = await llmService.loadModel(AppConstants.defaultModelUrl);
+      final success = await llmService.loadModel(modelPath);
       
       Navigator.pop(context); // Close progress
       
       if (success) {
-        await ref.read(settingsProvider.notifier).updateSetting('model_path', AppConstants.defaultModelUrl);
+        await ref.read(settingsProvider.notifier).updateSetting('model_path', modelPath);
         if (context.mounted) {
           Navigator.pop(context); // Close dialog
           ScaffoldMessenger.of(context).showSnackBar(

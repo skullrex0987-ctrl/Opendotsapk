@@ -1,0 +1,5 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Internet permission is required for the Flutter debug/profiling
+         hot-reload connection. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+</manifest>

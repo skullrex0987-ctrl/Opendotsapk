@@ -35,7 +35,6 @@
     
     <application
         android:label="LocalMind"
-        android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true">
         <activity
@@ -56,12 +55,10 @@
             </intent-filter>
         </activity>
         
-        <!-- Foreground Service for background tasks -->
-        <service
-            android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
-            android:foregroundServiceType="dataSync"
-            android:exported="false" />
-            
+        <!-- Foreground service is declared by the flutter_foreground_task
+             plugin's own manifest; declaring it again here would pin us to an
+             internal class name. -->
+
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />

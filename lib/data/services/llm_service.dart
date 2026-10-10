@@ -1,128 +1,107 @@
-/// LLM service using llama.cpp via FFI
-import 'dart:io';
-import 'package:path_provider/path_provider.dart';
+/// LLM service using llama.cpp via FFI.
+///
+/// Wraps the `llama_cpp_dart` package (verified API for v0.2.x):
+///   Llama.libraryPath = "...";
+///   final llama = Llama(path);
+///   llama.setPrompt(prompt);
+///   var (token, done) = llama.getNext();
+///   llama.dispose();
+///
+/// NOTE: the Android build must also ship the compiled `libllama.so`
+/// (built from ggml-org/llama.cpp with the Android NDK). If the shared
+/// library is absent, [loadModel] returns false and [onError] is invoked
+/// instead of crashing the app.
 import 'package:llama_cpp_dart/llama_cpp_dart.dart';
 
 class LlmService {
   static LlmService? _instance;
-  LlamaCpp? _llama;
+
+  Llama? _llama;
   String? _modelPath;
   bool _isLoaded = false;
-  
-  // Streaming callbacks
-  final void Function(String token)? onToken;
-  final void Function(String error)? onError;
-  
-  LlmService._({this.onToken, this.onError});
-  
-  static LlmService getInstance() {
-    _instance ??= LlmService._();
-    return _instance!;
+  int _nCtx = 2048;
+
+  /// Optional streaming hooks.
+  void Function(String token)? onToken;
+  void Function(String error)? onError;
+
+  LlmService._();
+
+  static LlmService getInstance() => _instance ??= LlmService._();
+
+  /// Point the binding at a custom shared library (Android: "libllama.so").
+  static void setLibraryPath(String path) {
+    Llama.libraryPath = path;
   }
-  
-  /// Load a GGUF model from path
-  Future<bool> loadModel(String modelPath) async {
+
+  /// Load a GGUF model. Returns true on success.
+  Future<bool> loadModel(String modelPath, {int nCtx = 2048}) async {
     try {
-      final file = File(modelPath);
-      if (!await file.exists()) {
-        onError?.call('Model file not found: $modelPath');
-        return false;
-      }
-      
+      await release();
+      _nCtx = nCtx;
+      // The synchronous `Llama` wrapper is used so token streaming can be
+      // exposed as a plain Dart Stream without isolate plumbing.
+      _llama = Llama(modelPath);
       _modelPath = modelPath;
-      
-      // Initialize llama.cpp with model
-      _llama = await LlamaCpp.initialize(
-        modelPath: modelPath,
-        params: LlamaParams(
-          nCtx: 2048,  // Context size
-          nThreads: 2,  // Number of threads
-          nBatch: 512,
-          nKeep: 256,
-        ),
-      );
-      
       _isLoaded = true;
       return true;
     } catch (e) {
       onError?.call('Failed to load model: $e');
       _isLoaded = false;
+      _llama = null;
       return false;
     }
   }
-  
-  /// Generate response with streaming
-  Future<String> generate({
-    required String prompt,
-    int maxTokens = 512,
-    double temperature = 0.7,
-  }) async {
-    if (!_isLoaded || _llama == null) {
-      throw Exception('Model not loaded. Call loadModel() first.');
-    }
-    
-    try {
-      final result = await _llama!.generate(
-        prompt: prompt,
-        nPredict: maxTokens,
-        temperature: temperature,
-        topP: 0.9,
-        repeatPenalty: 1.1,
-      );
-      
-      return result;
-    } catch (e) {
-      onError?.call('Generation error: $e');
-      rethrow;
-    }
-  }
-  
-  /// Stream generation for real-time token display
+
+  /// Stream generated tokens one at a time.
   Stream<String> generateStream({
     required String prompt,
     int maxTokens = 512,
-    double temperature = 0.7,
   }) async* {
-    if (!_isLoaded || _llama == null) {
-      throw Exception('Model not loaded. Call loadModel() first.');
+    final llama = _llama;
+    if (!_isLoaded || llama == null) {
+      throw StateError('Model not loaded. Call loadModel() first.');
     }
-    
-    try {
-      // Using llama.cpp's sampling callback for streaming
-      await for (final token in _llama!.streamGenerate(
-        prompt: prompt,
-        nPredict: maxTokens,
-        temperature: temperature,
-      )) {
-        onToken?.call(token);
-        yield token;
-      }
-    } catch (e) {
-      onError?.call('Stream error: $e');
-      rethrow;
+
+    llama.setPrompt(prompt);
+
+    var emitted = 0;
+    while (emitted < maxTokens) {
+      final (String token, bool done) = llama.getNext();
+      if (done) break;
+      if (token.isEmpty) continue;
+      onToken?.call(token);
+      yield token;
+      emitted++;
     }
   }
-  
-  /// Get model info
-  Map<String, dynamic>? getModelInfo() {
-    if (!_isLoaded || _llama == null) return null;
-    return {
-      'path': _modelPath,
-      'loaded': _isLoaded,
-      'model': _llama!.getModelName(),
-      'nCtx': _llama!.getNCtx(),
-    };
+
+  /// Convenience wrapper that collects the whole response.
+  Future<String> generate({
+    required String prompt,
+    int maxTokens = 512,
+  }) async {
+    final buffer = StringBuffer();
+    await for (final token
+        in generateStream(prompt: prompt, maxTokens: maxTokens)) {
+      buffer.write(token);
+    }
+    return buffer.toString();
   }
-  
-  /// Release model resources
+
+  /// Free native resources.
   Future<void> release() async {
-    await _llama?.free();
+    try {
+      _llama?.dispose();
+    } catch (_) {
+      // Already disposed / never initialised.
+    }
     _llama = null;
     _isLoaded = false;
     _modelPath = null;
   }
-  
-  /// Check if model is loaded
+
   bool get isLoaded => _isLoaded;
   String? get modelPath => _modelPath;
+  int get contextSize => _nCtx;
 }

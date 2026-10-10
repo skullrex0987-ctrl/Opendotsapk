@@ -1,0 +1,17 @@
+# This file tracks properties of this Flutter project.
+# Used by tooling to determine the project's revision and migration status.
+version:
+  revision: "unknown"
+  channel: "stable"
+
+project_type: app
+
+# Tracks metadata for the flutter migrate command.
+migration:
+  platforms:
+    - platform: root
+      create_revision: unknown
+      base_revision: unknown
+    - platform: android
+      create_revision: unknown
+      base_revision: unknown
