@@ -16,21 +16,21 @@ dependencies:
   flutter_riverpod: ^2.5.1
   riverpod_annotation: ^2.3.5
 
-  # Local LLM (llama.cpp via MethodChannel).
+  # Local LLM + vision (llama.cpp via MethodChannel).
   #
-  # Evaluated bindings, for whoever picks this up next:
+  # Bindings evaluated, so nobody repeats the search:
   #  - llama_cpp_dart / flutter_llama: their CMake points at a `llama.cpp/`
   #    directory that is missing from the published pub archive -> the APK
   #    builds but ships without libllama.so and the LLM silently never loads.
-  #  - native_llama 1.0.1: MIT, vendors the full llama.cpp tree incl.
-  #    tools/mtmd, so it is the only candidate with real mmproj vision — but
-  #    its link line is `llama dl vulkan`, and NDK r28 fails with hundreds of
-  #    `undefined symbol: div_f32_f16_f32_len` (ggml CPU backend) errors.
-  #    Fixing that needs the plugin vendored so its CMakeLists can link the
-  #    ggml backends explicitly. Tracked, not shipped.
-  #  - llama_flutter_android: builds clean and really packages libllama.so.
-  #    No mtmd, so vision is not supported on this binding.
-  llama_flutter_android: ^0.2.6
+  #  - llama_flutter_android: packages libllama.so correctly, but ships no mtmd,
+  #    so no vision model can ever be loaded.
+  #  - native_llama 1.0.1 (MIT): vendors the whole llama.cpp tree including
+  #    tools/mtmd, so mmproj vision works. It does force GGML_VULKAN=ON against
+  #    a vendored ggml-cpu that has no flash-attention kernels, which fails to
+  #    link with hundreds of `undefined symbol: div_f32_f16_f32_len` errors.
+  #    scripts/patch_native_llama.py turns Vulkan off before the Gradle build,
+  #    which fixes it; inference then runs on the CPU backend.
+  native_llama: ^1.0.1
 
   # Vector database / SQLite
   sqflite: ^2.3.3
