@@ -135,10 +135,29 @@ class GpuService {
       final gpuClass = _classifyGpu(combined, info);
       final npuVendor = _classifyNpu(combined);
 
-      // `physicalSize` is bytes on the plugin's Android surface.
-      final ramMb = info.physicalSize > 0
-          ? (info.physicalSize / (1024 * 1024)).round()
+      // device_info_plus 13 exposes the RAM figure directly (bytes).
+      // v11's `physicalSize` no longer exists.
+      final ramMb = info.physicalRamSize > 0
+          ? (info.physicalRamSize / (1024 * 1024)).round()
           : 0;
+
+      // Android's own low-RAM flag is a stronger signal than a byte count: the
+      // platform sets it when it knows it will kill background work under
+      // pressure, which is exactly the situation where holding GPU buffers
+      // alongside the model gets the app killed.
+      if (info.isLowRamDevice) {
+        _cached = GpuCapability(
+          socModel: soc,
+          hardware: info.hardware,
+          gpuClass: GpuClass.unlikely,
+          npuVendor: npuVendor,
+          totalRamMb: ramMb,
+          recommendedGpuLayers: 0,
+          summary: 'Android reports this as a low-RAM device, so inference '
+              'stays on the CPU and a small model is recommended.',
+        );
+        return _cached!;
+      }
 
       // Midrange Mali parts are the well-documented case where GPU token
       // generation loses to the CPU: generation is memory-bandwidth-bound, and
