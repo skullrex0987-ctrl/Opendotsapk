@@ -1,0 +1,62 @@
+name: localmind
+description: A fully local, privacy-first AI agent that runs entirely on-device.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: '>=3.10.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.2
+  
+  # State Management
+  flutter_riverpod: ^2.4.9
+  riverpod_annotation: ^2.3.3
+  
+  # Local LLM (llama.cpp bindings) - verify latest version on pub.dev
+  llama_cpp_dart: any
+  path_provider: ^2.1.1
+  
+  # Vector Database & SQLite
+  sqflite: ^2.3.0
+  sqlite3: ^2.0.0
+  
+  # ONNX Runtime for embeddings (native, check platform support)
+  onnxruntime: any
+  
+  # Voice
+  speech_to_text: ^6.6.0
+  flutter_tts: ^3.8.1
+  
+  # Background Tasks
+  workmanager: ^0.5.2
+  flutter_foreground_task: ^6.3.3
+  
+  # HTTP & Network
+  http: ^1.1.0
+  
+  # Permissions & Location
+  permission_handler: ^11.2.0
+  geolocator: ^11.0.0
+  
+  # Storage
+  shared_preferences: ^2.2.2
+  path: ^1.8.3
+  
+  # UI Utilities
+  uuid: ^4.3.3
+  flutter_markdown: ^0.6.18
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  build_runner: ^2.4.7
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/models/

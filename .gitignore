@@ -1,0 +1,40 @@
+# Flutter / Dart
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Android
+*.apk
+*.aab
+*.jks
+*.keystore
+local.properties
+.gradle/
+gradle-wrapper.jar
+captures/
+*.iml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Models (large binaries — never commit)
+assets/models/*.gguf
+assets/models/*.onnx
+*.gguf
+*.onnx
+
+# Secrets
+.env
+*.env
+key.properties
