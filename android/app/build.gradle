@@ -24,7 +24,11 @@ if (flutterVersionName == null) {
 
 android {
     namespace = "com.localmind.localmind"
-    compileSdk = 35
+    // flutter_tts / geolocator_android / shared_preferences_android /
+    // sqflite_android all compile against SDK 36; 36 is backward compatible.
+    compileSdk = 36
+    // `jni` (pulled in by onnxruntime) requires NDK 28.2.13676358.
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -38,7 +42,7 @@ android {
     defaultConfig {
         applicationId = "com.localmind.localmind"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 35
         versionCode = flutterVersionCode.toInteger()
         versionName = flutterVersionName
         ndk {

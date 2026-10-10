@@ -27,12 +27,13 @@ dependencies:
   onnxruntime: ^1.4.1
 
   # Voice
-  speech_to_text: ^6.6.2
+  speech_to_text: ^7.5.0
   flutter_tts: ^4.0.2
 
   # Background tasks
-  workmanager: ^0.5.2
-  flutter_foreground_task: ^6.3.3
+  # (flutter_foreground_task removed: unused, and its 6.x Android host still
+ #  used the v1 embedding that Flutter >=3.29 deleted.)
+  workmanager: ^0.10.10
 
   # Network
   http: ^1.2.1
