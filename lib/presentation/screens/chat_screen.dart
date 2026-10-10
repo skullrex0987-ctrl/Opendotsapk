@@ -324,11 +324,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   /// Pick and ingest a document, then hand it to the memory store.
   Future<void> _pickDocument() async {
     try {
-      final result = await FilePicker.pickFiles(
-        type: FileType.any,
-        withData: false,
-      );
-      final path = result?.files.single.path;
+      final result = await FilePicker.pickFiles(type: FileType.any);
+      final path = result.isEmpty ? null : result.first.path;
       if (path == null || !mounted) return;
 
       showDialog(
@@ -828,11 +825,8 @@ class ModelSelectorDialog extends ConsumerWidget {
     // Pick any GGUF from the device and bind it directly — useful for models
     // the catalog does not know about.
     try {
-      final result = await FilePicker.pickFiles(
-        type: FileType.any,
-        withData: false,
-      );
-      final path = result?.files.single.path;
+      final result = await FilePicker.pickFiles(type: FileType.any);
+      final path = result.isEmpty ? null : result.first.path;
       if (path == null || !context.mounted) return;
 
       if (!path.toLowerCase().endsWith('.gguf')) {

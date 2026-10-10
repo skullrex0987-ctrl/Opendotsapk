@@ -242,7 +242,4 @@ class EmbeddingService {
     _session = null;
     _isLoaded = false;
   }
-
-  bool get isLoaded => _isLoaded;
-  int get dimension => _dim;
 }
