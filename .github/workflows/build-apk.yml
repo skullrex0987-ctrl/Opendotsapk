@@ -36,8 +36,24 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      # native_llama 1.0.1 forces GGML_VULKAN=ON but vendors a ggml-cpu with
-      # no flash-attn kernels, so the Vulkan backend cannot link. Turn it off.
+      # The Vulkan backend's flash-attention kernels exist only as generated
+      # SPIR-V blobs, so the backend cannot link without this shader compiler.
+      # Its absence is the single cause of both historical link failures
+      # (ggml_backend_vk_reg, then flash_attn_f32_f16_f32_data).
+      - name: Install Vulkan shader compiler
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            glslc spirv-tools libvulkan-dev vulkan-tools
+          echo
+          echo "### glslc"
+          which glslc && glslc --version
+          echo
+          echo "### Vulkan headers/libs visible to CMake"
+          ls /usr/include/vulkan 2>/dev/null | head -5 || echo "(no host vulkan headers)"
+
+      # Enables GPU offload when glslc is present, and degrades to a CPU-only
+      # link when it is not — rather than failing the build outright.
       - name: Patch native_llama for Android
         run: python3 scripts/patch_native_llama.py
 
@@ -99,6 +115,26 @@ jobs:
             echo "::error::no mtmd symbols in libnative_llama.so - vision will not work."
             fail=1
           fi
+
+          # GPU is reported, not required: an APK without a Vulkan backend is
+          # still a working app that runs on the CPU. Silence here would hide a
+          # regression though, so the failure mode is a loud warning.
+          echo
+          if unzip -l out/localmind-release.apk \
+               | grep -qE "libggml-vulkan\.so"; then
+            echo "OK: Vulkan backend shipped - GPU offload available."
+            unzip -o -q out/localmind-release.apk \
+              "lib/arm64-v8a/libggml-vulkan.so" -d "$RUNNER_TEMP/apkcheck"
+            if strings "$RUNNER_TEMP/apkcheck/lib/arm64-v8a/libggml-vulkan.so" \
+                 | grep -qi "ggml_backend_vk_reg"; then
+              echo "OK: Vulkan backend registers itself with ggml."
+            else
+              echo "::warning::libggml-vulkan.so is present but exposes no backend entry point."
+            fi
+          else
+            echo "::warning::No Vulkan backend in the APK - GPU offload will not engage; inference runs on the CPU."
+          fi
+
           exit $fail
 
       - name: Upload APK artifact

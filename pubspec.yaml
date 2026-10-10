@@ -85,7 +85,10 @@ dependencies:
 
   # Device capability probing: SoC/hardware identity decides how many layers we
   # dare to offload to the GPU, and which NPU (if any) is present.
-  device_info_plus: ^11.3.0
+  #
+  # Must be ^13: v11 depends on win32 ^5, and share_plus 13 requires win32 ^6,
+  # so v11 cannot coexist with the share sheet.
+  device_info_plus: ^13.3.0
 
   # UI / export
   uuid: ^4.4.0
