@@ -227,10 +227,10 @@ class RouterService {
       }
     }
 
-    // Obvious code blocks are a strong signal.
+    // Obvious code is a strong signal: a 0.5B model cannot write it well.
     if (lower.contains('```') || lower.contains('def ') ||
         lower.contains('function ') || lower.contains('class ')) {
-      cloudScore += 2;
+      cloudScore += 3;
       reasons.add('code');
     }
 
@@ -259,7 +259,11 @@ class RouterService {
       }
     }
 
-    if (prompt.length < 120) {
+    // Terse conversational turns are the on-device model's home turf. This is
+    // only a tiebreaker: applying it unconditionally would let it cancel out a
+    // genuine signal like a code snippet, which is how "def parse(s): ..."
+    // ended up staying local.
+    if (cloudScore == 0 && prompt.length < 120) {
       cloudScore -= 1;
     }
 
