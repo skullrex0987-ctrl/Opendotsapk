@@ -261,6 +261,10 @@ class SettingsNotifier extends StateNotifier<Map<String, dynamic>> {
     // Security
     'biometric_lock': false,
 
+    // Compute backend: auto | gpu | cpu. 'auto' follows GpuService, which
+    // stays on the CPU for midrange Mali parts where the GPU usually loses.
+    'gpu_offload': 'auto',
+
     // First-run
     'onboarding_done': false,
   }) {
@@ -302,6 +306,7 @@ class SettingsNotifier extends StateNotifier<Map<String, dynamic>> {
       'active_cloud_provider',
       'active_cloud_model',
       'model_path',
+      'gpu_offload',
     ]) {
       final raw = await _db.getPreference(key);
       if (raw != null && raw.isNotEmpty) {

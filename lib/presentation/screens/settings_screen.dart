@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/providers.dart';
 import '../../core/constants/app_constants.dart';
 import 'models_screen.dart';
+import 'performance_screen.dart';
+import 'cloud_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -247,6 +249,35 @@ class AboutSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
+        ListTile(
+          leading: const Icon(Icons.speed),
+          title: const Text('Performance'),
+          subtitle: const Text(
+            'Backend, chipset and a throughput benchmark',
+            style: TextStyle(fontSize: 11),
+          ),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => const PerformanceScreen(),
+            ),
+          ),
+        ),
+        ListTile(
+          leading: const Icon(Icons.cloud_queue),
+          title: const Text('Cloud Models'),
+          subtitle: const Text(
+            'Bring your own API key — optional, off by default',
+            style: TextStyle(fontSize: 11),
+          ),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => const CloudModelsScreen(),
+            ),
+          ),
+        ),
+        const Divider(),
         ListTile(
           leading: const Icon(Icons.info),
           title: const Text('Version'),

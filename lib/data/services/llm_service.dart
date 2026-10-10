@@ -78,20 +78,30 @@ class LlmService {
 
   static LlmService getInstance() => _instance ??= LlmService._();
 
-  /// Number of usable CPU cores.
+  /// Number of usable CPU cores for inference.
   ///
   /// [performanceOnly] asks the platform for the big cores only. On the
   /// big.LITTLE Android SoCs this app targets, handing llama.cpp every core
   /// including the little ones tends to *reduce* throughput, because the slow
   /// cores become the stragglers in every synchronised matmul.
+  ///
+  /// The result is capped at [_maxInferenceThreads]. Decode is memory-bandwidth
+  /// bound, so past roughly four threads the extra workers contend for the same
+  /// memory bus and generation gets slower rather than faster. The cost is some
+  /// prompt-processing throughput, which is the right trade for a chat app
+  /// where time-to-first-token and streaming smoothness are what a person
+  /// actually notices.
   Future<int> cpuCores({bool performanceOnly = true}) async {
     try {
       final cores = await _llm.getCpuCores(performanceOnly: performanceOnly);
-      return cores > 0 ? cores : 4;
+      if (cores <= 0) return 4;
+      return cores < _maxInferenceThreads ? cores : _maxInferenceThreads;
     } catch (_) {
       return 4;
     }
   }
+
+  static const int _maxInferenceThreads = 4;
 
   /// Load a GGUF chat model. Returns false (and reports via [onError]) on
   /// failure rather than throwing, so the UI can show a message.

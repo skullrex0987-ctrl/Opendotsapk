@@ -777,10 +777,12 @@ class ModelSelectorDialog extends ConsumerWidget {
     var message = 'Failed to load model';
 
     try {
-      final gpu = await GpuService.detect();
+      final layers = await GpuService.layersForMode(
+        '${ref.read(settingsProvider)['gpu_offload'] ?? 'auto'}',
+      );
       ok = await llmService.loadModel(
         await manager.weightPath(chat),
-        gpuLayers: gpu.recommendedGpuLayers,
+        gpuLayers: layers,
       );
 
       // Vision is optional — a missing projector must not fail the chat model.

@@ -53,7 +53,16 @@ class GpuCapability {
   final int totalRamMb;
 
   /// Layers this device should try to offload.
+  ///
+  /// Note this is a *default*, not a verdict. On many midrange Mali parts token
+  /// generation is memory-bandwidth-bound and the CPU kernels are genuinely
+  /// faster, so the UI offers a manual override and a benchmark rather than
+  /// trusting this number.
   final int recommendedGpuLayers;
+
+  /// True when the GPU is likely to *lose* to the CPU, so the default is to
+  /// stay on the CPU and let the user opt in.
+  final bool gpuOftenSlower;
 
   /// Plain-language explanation, shown in the UI.
   final String summary;
@@ -66,6 +75,7 @@ class GpuCapability {
     required this.totalRamMb,
     required this.recommendedGpuLayers,
     required this.summary,
+    this.gpuOftenSlower = false,
   });
 
   bool get npuUsable => false;
@@ -130,7 +140,16 @@ class GpuService {
           ? (info.physicalSize / (1024 * 1024)).round()
           : 0;
 
-      final layers = _layersFor(gpuClass, ramMb);
+      // Midrange Mali parts are the well-documented case where GPU token
+      // generation loses to the CPU: generation is memory-bandwidth-bound, and
+      // a mobile GPU with a narrow bus does not beat well-vectorised NEON
+      // kernels. Do not silently pick the slower path for these users.
+      final maliCautious = combined.contains('mali') &&
+          !combined.contains('immortalis') &&
+          !combined.contains('g715') &&
+          !combined.contains('g720');
+
+      final layers = maliCautious ? 0 : _layersFor(gpuClass, ramMb);
 
       _cached = GpuCapability(
         socModel: soc,
@@ -139,7 +158,13 @@ class GpuService {
         npuVendor: npuVendor,
         totalRamMb: ramMb,
         recommendedGpuLayers: layers,
-        summary: _summaryFor(gpuClass, layers, ramMb),
+        gpuOftenSlower: maliCautious,
+        summary: maliCautious
+            ? 'A midrange Mali GPU was detected. On these, token generation is '
+                'memory-bandwidth-bound and the CPU kernels are usually faster, '
+                'so the CPU is used by default. You can try the GPU in '
+                'Performance and compare.'
+            : _summaryFor(gpuClass, layers, ramMb),
       );
     } catch (e) {
       debugPrint('[GpuService] detection failed: $e');
@@ -255,4 +280,20 @@ class GpuService {
   /// Called from tests to reset the memoised probe.
   @visibleForTesting
   static void resetCache() => _cached = null;
+
+  /// Resolve the offload setting — 'auto' | 'gpu' | 'cpu' — to a layer count.
+  ///
+  /// This is the single place that decides, so the Performance screen and the
+  /// model loader can never disagree about what the user asked for.
+  static Future<int> layersForMode(String mode) async {
+    switch (mode) {
+      case 'gpu':
+        // llama.cpp clamps to the model's actual depth, so 99 means "all".
+        return _allLayers;
+      case 'cpu':
+        return 0;
+      default:
+        return (await detect()).recommendedGpuLayers;
+    }
+  }
 }
