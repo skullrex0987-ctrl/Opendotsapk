@@ -25,11 +25,15 @@ dependencies:
   #  - llama_flutter_android: packages libllama.so correctly, but ships no mtmd,
   #    so no vision model can ever be loaded.
   #  - native_llama 1.0.1 (MIT): vendors the whole llama.cpp tree including
-  #    tools/mtmd, so mmproj vision works. It does force GGML_VULKAN=ON against
-  #    a vendored ggml-cpu that has no flash-attention kernels, which fails to
-  #    link with hundreds of `undefined symbol: div_f32_f16_f32_len` errors.
-  #    scripts/patch_native_llama.py turns Vulkan off before the Gradle build,
-  #    which fixes it; inference then runs on the CPU backend.
+  #    tools/mtmd, so mmproj vision works, and ships a complete
+  #    ggml/src/ggml-vulkan backend. Its CMake sets GGML_VULKAN=ON, but
+  #    ggml-vulkan/CMakeLists.txt does `find_package(Vulkan COMPONENTS glslc
+  #    REQUIRED)` — without the glslc shader compiler the backend is skipped
+  #    while -DGGML_USE_VULKAN=1 is still defined, giving
+  #    `undefined symbol: ggml_backend_vk_reg`. Building with GPU therefore
+  #    needs glslc installed on the runner; see docs/GPU_ACCELERATION.md.
+  #    scripts/patch_native_llama.py currently turns Vulkan off so the app
+  #    builds anywhere, which means inference runs on the CPU backend.
   native_llama: ^1.0.1
 
   # Vector database / SQLite
@@ -38,6 +42,25 @@ dependencies:
 
   # ONNX embeddings (API verified for 1.4.x)
   onnxruntime: ^1.4.1
+
+  # Attachments: images for the vision model, files for document ingestion.
+  image_picker: ^1.2.4
+  file_picker: ^13.1.0
+  # EPUB and DOCX are ZIP containers; decoding them in-process avoids pulling
+  # in a document SDK.
+  archive: ^4.4.0
+  mime: ^2.1.0
+
+  # Secrets: API keys for BYOK cloud models and the at-rest database key.
+  # Values live in the Android Keystore, never in shared_preferences.
+  flutter_secure_storage: ^11.2.0
+  # AES-GCM for message/memory contents at rest. Pure Dart on purpose — see
+  # the note at the top of lib/core/security/crypto_box.dart.
+  cryptography: ^2.9.0
+  local_auth: ^3.0.2
+
+  # Receiving a share from other apps (text or an image straight into chat).
+  receive_sharing_intent: ^1.9.0
 
   # Voice
   speech_to_text: ^7.5.0
@@ -60,9 +83,10 @@ dependencies:
   path_provider: ^2.1.3
   path: ^1.9.0
 
-  # UI
+  # UI / export
   uuid: ^4.4.0
   flutter_markdown: ^0.7.1
+  share_plus: ^10.1.4
 
 dev_dependencies:
   flutter_test:

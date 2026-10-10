@@ -44,6 +44,12 @@ jobs:
       - name: Analyze (non-blocking)
         run: flutter analyze || true
 
+      # Hard gate. These cover the pure logic that breaks silently:
+      # the float32 vector codec, at-rest encryption, BM25 fusion, document
+      # extraction, and the local/cloud routing rules.
+      - name: Run unit and widget tests
+        run: flutter test --reporter expanded
+
       # --- diagnostics: is the llama.cpp plugin actually part of the build? ---
       - name: Diagnose plugin wiring
         run: |
