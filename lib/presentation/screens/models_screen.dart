@@ -18,7 +18,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/local_model.dart';
-import '../services/model_manager.dart';
+import '../../data/services/model_manager.dart';
 
 class ModelsScreen extends ConsumerStatefulWidget {
   const ModelsScreen({super.key});
@@ -61,11 +61,12 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
   }
 
   Future<void> _loadSelection() async {
-    final ids = await Future.wait([
+    final Future<String?> lookups = Future.wait<String?>([
       _manager.activeLlmId(),
       _manager.activeVisionId(),
       _manager.activeEmbeddingId(),
     ]);
+    final ids = await lookups;
     if (!mounted) return;
     setState(() {
       _activeLlm = ids[0];

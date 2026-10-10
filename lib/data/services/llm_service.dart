@@ -8,7 +8,7 @@
 /// app fails at runtime because the native library was never packaged.
 ///
 /// Native surface used here:
-///   final llm = NativeLlama.instance;
+///   final llm = NativeLlama();
 ///   await llm.initModel(path, nCtx: 4096, nGpuLayers: 99);
 ///   await llm.initVision(mmprojPath);           // enables image input
 ///   llm.generateResponse(msgs, mediaPaths: [jpg]).listen(print);
@@ -29,7 +29,7 @@ import '../../domain/models/local_model.dart';
 class LlmService {
   static LlmService? _instance;
 
-  final NativeLlama _llm = NativeLlama.instance;
+  final NativeLlama _llm = NativeLlama();
 
   String? _modelPath;
   bool _isLoaded = false;
