@@ -26,14 +26,16 @@ dependencies:
   #    so no vision model can ever be loaded.
   #  - native_llama 1.0.1 (MIT): vendors the whole llama.cpp tree including
   #    tools/mtmd, so mmproj vision works, and ships a complete
-  #    ggml/src/ggml-vulkan backend. Its CMake sets GGML_VULKAN=ON, but
+  #    ggml/src/ggml-vulkan backend. Its CMake sets GGML_VULKAN=ON and
   #    ggml-vulkan/CMakeLists.txt does `find_package(Vulkan COMPONENTS glslc
-  #    REQUIRED)` — without the glslc shader compiler the backend is skipped
-  #    while -DGGML_USE_VULKAN=1 is still defined, giving
-  #    `undefined symbol: ggml_backend_vk_reg`. Building with GPU therefore
-  #    needs glslc installed on the runner; see docs/GPU_ACCELERATION.md.
-  #    scripts/patch_native_llama.py currently turns Vulkan off so the app
-  #    builds anywhere, which means inference runs on the CPU backend.
+  #    REQUIRED)`. glslc is the GLSL->SPIR-V shader compiler, and without it the
+  #    backend target is never created while -DGGML_USE_VULKAN=1 is still
+  #    defined, giving `undefined symbol: ggml_backend_vk_reg` followed by
+  #    `undefined symbol: flash_attn_f32_f16_f32_data` (that kernel exists only
+  #    as a generated SPIR-V blob). Installing glslc fixes both — CI does, and
+  #    the APK ships GPU support. scripts/patch_native_llama.py enables Vulkan
+  #    when glslc is present and falls back to a CPU-only link when it is not.
+  #    See docs/GPU_ACCELERATION.md.
   native_llama: ^1.0.1
 
   # Vector database / SQLite

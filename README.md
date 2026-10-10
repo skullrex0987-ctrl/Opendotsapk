@@ -2,7 +2,7 @@
 
 A fully local, privacy-first AI agent for Android that runs entirely on-device.
 
-**Download the APK:** [Releases → v1.1.0](https://github.com/skullrex0987-ctrl/Opendotsapk/releases/tag/v1.1.0)
+**Download the APK:** [Releases → v1.2.0](https://github.com/skullrex0987-ctrl/Opendotsapk/releases/tag/v1.2.0)
 
 ## Status
 
@@ -14,19 +14,40 @@ A fully local, privacy-first AI agent for Android that runs entirely on-device.
 | 9 Android tools + permissions | Working |
 | Multi-agent (Planner/Executor/Critic) | Working |
 | Voice in/out | Working |
-| Vision (Moondream2) | Working — mtmd statically linked in `libnative_llama.so` (189 symbols), reachable from the composer |
+| Vision (Moondream2) | Working — mtmd statically linked in `libnative_llama.so`, reachable from the composer |
+| **GPU acceleration (Vulkan)** | **Working** — `libggml-vulkan.so` (47 MB) shipped, exports `ggml_backend_vk_reg`, links `libvulkan.so`. Runtime CPU fallback. |
 | Cloud models (BYOK) | Working — 12 providers, keys in the hardware keystore |
 | Local/cloud router | Working — on-device by default, rule-based escalation |
 | MCP client | Working — streamable HTTP, tools join the agent's tool set |
 | Hybrid retrieval + reranking | Working — dense + BM25, MMR reranking |
 | Document ingestion | Working — PDF, DOCX, plain text |
 | At-rest encryption + biometric lock | Working — AES-GCM, key in the keystore |
-| GPU / NPU acceleration | **Not enabled** — Vulkan source is vendored but needs `glslc`; see `docs/GPU_ACCELERATION.md` |
-| Verified on a physical device | **No** — compiles and tests pass; never launched on hardware |
+| NPU acceleration | **Not used, and not claimed** — no portable backend exists; the app names the NPU it detects |
+| Verified on a physical device | **Partially** — v1.1.0 ran on real hardware (which is how the hang was found); v1.2.0 has not yet |
+
+## Performance and the GPU
+
+GPU offload is a **choice, not a build-time default**, because the GPU is not
+always faster: token generation is memory-bandwidth-bound, and on many midrange
+GPUs — Mali especially — well-vectorised CPU kernels win.
+
+**Settings → Performance** reports your SoC, RAM, GPU class and layers offloaded,
+lets you pick Auto / GPU / CPU, and includes a throughput benchmark so you can
+compare on your own phone.
+
+- **Auto** offloads on capable hardware and stays on the CPU for midrange Mali
+  and low-RAM devices.
+- `isLowRamDevice`, or under 4 GB of RAM, forces CPU — that is when GPU buffers
+  alongside the model get the app killed.
+- Offload is fixed when the model loads, so changing it prompts a reload.
+
+NPU is detected and named but **never used**: every phone NPU has its own vendor
+runtime (QNN, NeuroPilot, ENN, Edge TPU) with no common build target, and there is
+no portable llama.cpp backend for it. The screen says exactly that.
 
 ## Features
 
-- **Local LLM Inference**: llama.cpp via FFI running quantized GGUF models, CPU backend
+- **Local LLM Inference**: llama.cpp via FFI running quantized GGUF models
 - **Selectable models**: the app downloads the model you pick at runtime, nothing bundled
 - **Multi-Agent System**: Planner → Executor → Critic pipeline for task decomposition
 - **Tool Calling**: JSON-based function calling with an Allow/Ask/Block permission system
@@ -77,12 +98,15 @@ The authoritative build is GitHub Actions — every push to `main` builds the AP
 verifies the native libraries are actually inside it:
 
 ```bash
+# glslc is required for GPU support; without it the script builds CPU-only.
+sudo apt-get install -y glslc spirv-tools libvulkan-dev
+
 flutter pub get
-python3 scripts/patch_native_llama.py   # disables Vulkan; see the script's docstring
+python3 scripts/patch_native_llama.py   # auto-detects glslc; --cpu / --require-gpu
 flutter build apk --release --target-platform android-arm64
 ```
 
-Local build without the patch step will fail at link time with
+Omitting the patch step fails at link time with
 `undefined symbol: ggml_backend_vk_reg`.
 
 ### Download models for local testing
