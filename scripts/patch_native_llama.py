@@ -22,6 +22,7 @@ Run once, right after `flutter pub get`, before the Gradle build.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -42,11 +43,28 @@ endif()"""
 
 
 def main() -> int:
-    root = Path(sys.argv[1] if len(sys.argv) > 1 else
-                Path.home() / ".pub-cache/hosted/pub.dev")
-    candidates = sorted(root.glob("native_llama-*/android/src/main/cpp/CMakeLists.txt"))
+    # PUB_CACHE can point anywhere, and the package may land under a different
+    # host directory than pub.dev, so glob for the CMakeLists rather than
+    # assuming a layout.
+    roots = [Path(os.environ["PUB_CACHE"])] if os.environ.get("PUB_CACHE") else []
+    roots.append(Path.home() / ".pub-cache")
+    roots.append(Path.cwd() / ".dart_tool")
+
+    seen: list[Path] = []
+    candidates: list[Path] = []
+    for root in roots:
+        if root in seen or not root.is_dir():
+            continue
+        seen.append(root)
+        candidates.extend(sorted(
+            root.glob("**/native_llama-*/android/src/main/cpp/CMakeLists.txt")))
+
     if not candidates:
-        print("::error::native_llama not found under %s" % root)
+        print("::error::native_llama CMakeLists not found; searched:")
+        for root in seen:
+            print("  - %s" % root)
+            for entry in sorted(root.glob("**/native_llama*"))[:10]:
+                print("      %s" % entry)
         return 1
 
     changed = []
