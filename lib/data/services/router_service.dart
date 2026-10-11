@@ -167,6 +167,39 @@ class RouterService {
     bool localModelReady = false,
   }) {
     // ---- hard rules -------------------------------------------------------
+
+    // Checked FIRST, ahead of every "where should it run" rule below, because a
+    // picture nobody can look at is not answerable anywhere.
+    //
+    // The order is the whole point. With this block placed after the
+    // `_candidates.isEmpty` check, a device with no cloud configured returned
+    // `local` first, the image was handed to a text model, the plugin discarded
+    // it, and a perfectly clear question came back as "I didn't understand your
+    // question" — which is exactly the bug this is here to stop.
+    if (hasImages && !localVisionReady) {
+      // Private mode and offline are absolute: never reach for a cloud model,
+      // even to save the turn.
+      final v = (config.privateMode || !isOnline) ? null : visionCandidate;
+      if (v != null) {
+        return RouteDecision(
+          target: RouteTarget.cloud,
+          provider: v.provider,
+          modelId: v.modelId,
+          reason: 'Image attached but no on-device vision model is loaded — '
+              'using ${v.provider.displayName}',
+          forced: true,
+        );
+      }
+      // No vision anywhere. Refuse rather than ask a model that cannot see.
+      return const RouteDecision(
+        target: RouteTarget.refused,
+        reason: 'This message has an image, but no vision model is loaded, so '
+            'nothing can actually look at it. Load a vision model in '
+            'Settings → Models, then send again.',
+        forced: true,
+      );
+    }
+
     if (config.privateMode) {
       return const RouteDecision(
         target: RouteTarget.local,
@@ -187,30 +220,6 @@ class RouterService {
       return const RouteDecision(
         target: RouteTarget.local,
         reason: 'No cloud model configured — using the on-device model',
-        forced: true,
-      );
-    }
-
-    if (hasImages && !localVisionReady) {
-      final v = visionCandidate;
-      if (v != null) {
-        return RouteDecision(
-          target: RouteTarget.cloud,
-          provider: v.provider,
-          modelId: v.modelId,
-          reason: 'Image attached but no on-device vision model is loaded — '
-              'using ${v.provider.displayName}',
-          forced: true,
-        );
-      }
-      // No vision anywhere. Refuse: answering would mean asking a model that
-      // never saw the picture, which is how "I didn't understand your question"
-      // gets returned for a question that was perfectly clear.
-      return const RouteDecision(
-        target: RouteTarget.refused,
-        reason: 'This message has an image, but no vision model is loaded, so '
-            'nothing can actually look at it. Load a vision model in '
-            'Settings → Models, then send again.',
         forced: true,
       );
     }

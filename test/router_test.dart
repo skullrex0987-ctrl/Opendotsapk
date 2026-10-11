@@ -112,6 +112,59 @@ void main() {
       expect(d.isRefused, isTrue);
     });
 
+    test('private mode refuses an unservable image rather than reaching out', () {
+      // Private mode is absolute. It must never solve a vision gap by going
+      // online, so refusing is the only honest outcome.
+      router.setCandidates([openAi()]);
+      final d = router.decide(
+        prompt: 'what is this',
+        config: const RoutingConfig(mode: 'auto', privateMode: true),
+        hasImages: true,
+        localVisionReady: false,
+        localModelReady: true,
+      );
+      expect(d.isCloud, isFalse);
+      expect(d.isRefused, isTrue);
+    });
+
+    test('offline refuses an unservable image rather than reaching out', () {
+      router.setCandidates([openAi()]);
+      router.isOnline = false;
+      final d = router.decide(
+        prompt: 'what is this',
+        config: auto,
+        hasImages: true,
+        localVisionReady: false,
+        localModelReady: true,
+      );
+      expect(d.isCloud, isFalse);
+      expect(d.isRefused, isTrue);
+    });
+
+    test('the image check runs before the no-cloud early return', () {
+      // Ordering regression. `_candidates.isEmpty` used to be evaluated first,
+      // so a device with no cloud configured — which is the default — returned
+      // `local` and handed the picture to a text model that discarded it. The
+      // refusal must win regardless of how the rest of the config is set.
+      router.setCandidates(const []);
+      for (final cfg in [
+        auto,
+        const RoutingConfig(mode: 'local'),
+        const RoutingConfig(mode: 'cloud'),
+        const RoutingConfig(mode: 'auto', privateMode: true),
+      ]) {
+        final d = router.decide(
+          prompt: 'what is this',
+          config: cfg,
+          hasImages: true,
+          localVisionReady: false,
+          localModelReady: true,
+        );
+        expect(d.isRefused, isTrue, reason: 'mode=${cfg.mode}');
+        expect(d.isCloud, isFalse, reason: 'mode=${cfg.mode}');
+      }
+    });
+
     test('image with local vision stays eligible for local', () {
       router.setCandidates([openAi()]);
       final d = router.decide(
