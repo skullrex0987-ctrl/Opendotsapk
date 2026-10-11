@@ -151,29 +151,12 @@ class PlanStep {
   }
 }
 
-/// Tool execution result
-class ToolResult {
-  final String toolName;
-  final String result;
-  final bool success;
-  final String? error;
-  
-  ToolResult({
-    required this.toolName,
-    required this.result,
-    this.success = true,
-    this.error,
-  });
-  
-  Map<String, dynamic> toJson() {
-    return {
-      'tool': toolName,
-      'result': result,
-      'success': success,
-      'error': error,
-    };
-  }
-}
+// The legacy `ToolResult` class used to live here: {toolName, result, success,
+// error} with `success` defaulting to TRUE. It was referenced by nothing, and
+// its default is the exact assumption this codebase is trying to remove — a
+// result that reports success unless someone explicitly says otherwise. The
+// live type is now `domain/models/tool_result.dart`, where success is one of
+// six explicit statuses and the only way to get it is to ask for it.
 
 /// Memory entry for RAG
 class MemoryEntry {
