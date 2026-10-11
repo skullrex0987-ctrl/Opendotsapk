@@ -51,21 +51,21 @@ audit on trust.
 | ID | Task | Status | Note |
 |---|---|---|---|
 | A1 | Agent/tools/permissions dead or fake | done (partial) | ToolResult, schema fix, honest statuses, orchestrator rewrite, permission store, 180-test CI green. **Still open:** real device Intents (MethodChannel), the Approve/Deny confirmation sheet, the Agent-mode toggle wiring into chat, MCP server persistence. |
-| A2 | Conversation history: wrong window, wrong format | todo | `history.take(10)` still selects the OLDEST turns and `_buildPrompt` still sends a flat transcript. Untouched. |
+| A2 | Conversation history: wrong window, wrong format | done | Selection moved to `lib/core/utils/turn_builder.dart` — newest-first under a token budget, system prompt always kept, final question always kept, truncation reported. The old `history.take(10)` took the OLDEST ten of a chronological list and the current message was appended twice. `personality` is now actually sent. **Verified by execution:** 13/13 standalone Dart probe cases pass (`/opt/dart-sdk`), plus 13 host tests. |
 | A3 | Debug-key release signing, version drift | done (needs a secret) | Version now 1.2.0 and gated against the tag in CI. Signing reads a keystore but **no keystore exists yet** — CI correctly emits `*-DEBUGSIGNED-NOT-UPDATABLE.apk` and proves it with `apksigner`. The human must run `keytool` and add the 4 secrets; see `docs/RELEASE_SIGNING.md`. |
 | A4 | Encryption key silently replaceable (data loss) | done | Typed NotFound/ReadError split; key minted only on NotFound; `resetDatabaseKey()` never auto-called; `allowBackup=false` + backup rules. |
-| A5 | No stop control; cloud streams can hang | todo | Untouched. |
-| A6 | Biometric fails open; recents screenshot leak | todo | Untouched. |
+| A5 | No stop control; cloud streams can hang | done | Send button becomes Stop while generating, cancels the cloud subscription and calls `LlmService.stop()`. Partial replies are kept and marked `_(stopped)_`. Tokens batched to one UI update per 50 ms (was one `setState` per token, with one of the two loops missing its `mounted` guard). Cloud got a 15 s connect and 60 s inactivity timeout — it previously had none at all. |
+| A6 | Biometric fails open; recents screenshot leak | done (device test needed) | Removed the `canCheckBiometrics` fail-open; only `isDeviceSupported()` gates it now, so a PIN-only device is still protected. No screen lock at all is fail-**closed** with two explicit ways out. `FLAG_SECURE` + `setRecentsScreenshotEnabled(false)` stop chat appearing in the recents thumbnail. Pickers call `suppressReLock()`. **Never observed running** — needs a phone. |
 
 ### Phase B — reliability, privacy, compliance
 
 | ID | Task | Status | Note |
 |---|---|---|---|
-| B1 | 16 KB page alignment (`libonnxruntime.so` 0x1000) | todo | The C8 spike measured that the LiteRT engine AAR is already 16 KB aligned, but the app's own `libonnxruntime.so` is not. Untouched. |
-| B2 | Cleartext traffic; API key in Gemini URL | todo | Untouched. |
+| B1 | 16 KB page alignment (`libonnxruntime.so` 0x1000) | done — **gate only, not fixed** | Measured, not assumed: the `onnxruntime` pub package is frozen at 1.4.1 (ships ORT 1.15.1, 2023-12-19) so there is nothing to bump to; surveying Maven AARs shows 1.15.1–1.19.2 are all `0x1000` and **1.20.0 is the first aligned one** (the audit guessed 1.19). `scripts/check_page_alignment.py` now runs in CI and fails the build naming any misaligned library; tested against a good APK and against the real 1.15.1 `.so`. **The app still ships a misaligned library.** Fixing it needs a fork or a Gradle AAR override + device validation — see `docs/PAGE_ALIGNMENT.md`. |
+| B2 | Cleartext traffic; API key in Gemini URL | done | Global `usesCleartextTraffic` removed; a network security config denies cleartext except for loopback/RFC1918/link-local/`*.local`. Android matches that config by domain and not by CIDR, so the ranges are enforced by pure helpers in `cloud_screen.dart` (`isLocalHttpHostAllowed`) that gate what the app dials and refuse to save a key against a non-local plaintext URL. The Gemini key moved out of the query string into `x-goog-api-key`. |
 | B3 | Model download integrity/robustness | done | Resume + pinning + SHA-256 + inactivity timeout. All 7 manifest hashes independently verified against HF LFS metadata. **Two sub-items open:** no real free-space probe (needs a plugin/MethodChannel) and downloads still die if Android suspends the app (needs a foreground service). |
-| B4 | Documents & retrieval (PDF, chunking, encrypted search, logs, migrations) | todo | Untouched. Note `searchDocuments()` still LIKE-matches AES-GCM ciphertext, so it cannot work. |
-| B5 | Privacy boundaries (default local, erase-all) | todo | Untouched. `wipe()` still has zero callers. |
+| B4 | Documents & retrieval (PDF, chunking, encrypted search, logs, migrations) | done | **PDF** now inflates FlateDecode properly — the old regex never decompressed, so it returned nothing for nearly every real PDF, and it called a `flutter_pdf_text` API the project does not even depend on. The replacement is **verified by execution: 15/15 standalone Dart cases**, including zlib with/without `/Length`, hex, raw-deflate fallback, multi-stream, and the zip-bomb/entry-count guardrails. **Chunking** was 900 chars against a 128-token (≈512 char) embedder, so the tail of every chunk was never embedded; now 480/96 from one shared constant. **Search** LIKE-matched ciphertext and could never match; now decrypts then matches. **Activity logs** were written plaintext but read as encrypted; both sides now encrypt. **`_upgrade()`** dropped the vectors *and chunks* tables on every version bump — silently destroying the user's whole index on a routine update; now only a genuine legacy `vec0` table is replaced. Open: search is O(all chunks), needs a blind index if it grows. |
+| B5 | Privacy boundaries (default local, erase-all) | done (chat wiring done) | Local-by-default proven across 72 cases in `test/privacy_boundaries_test.dart`. Cloud needs consent bound to a specific provider, re-prompted when the provider changes. Private mode now genuinely skips the startup DNS probe (previously it ran unconditionally in two places). Erase-all is a two-step confirm with an explicit choice about deleting downloaded models. `wipe()` finally has callers. One-off cloud send is wired into the chat screen via `routeConfigForTurn`. |
 
 ### Phase C — GPU / NPU / CPU (owner's main goal)
 
@@ -99,6 +99,12 @@ CI runs are cited by run id. Green = all steps succeeded.
 | Date (IST) | Scope | Commit | CI run | Result |
 |---|---|---|---|---|
 | 2026-10-11 | A1 findings verified against source | (no commit) | — | n/a — read-only |
+| 2026-10-11 | A2+A5 | `9ce7927` | `38137414188` | **GREEN** |
+| 2026-10-11 | A2 selection logic, standalone Dart probe | (local) | — | **13/13 pass** — `dart` 3.13.5 at `/opt/dart-sdk` |
+| 2026-10-11 | A6+B1+B2+B5 | `ac2c42a`..`57c8601` | — | parse-clean: `dart format --output=none` over all 50 `lib`/`test` files, 0 parse failures |
+| 2026-10-11 | B4 PDF extractor, standalone Dart probe | (local) | — | **15/15 pass** — incl. zlib ±`/Length`, hex, raw-deflate, multi-stream, zip-bomb + entry-count guardrails |
+| 2026-10-11 | B4 (extractor + chunking, then search/logs/migrations) | `49fbdcd`, `6697016` | `38138755703`, `38138801776` | pending |
+| 2026-10-11 | A6+B5 chat wiring | `6545b3f` | `38138182850` | pending |
 | 2026-10-11 | A1+A3+A4+B3+docs, first attempt | `56ea925` | `38135144800` | ❌ 1 compile error: `database_helper.dart:504` called `.value` on the sealed base `DecryptResult` (flow promotion failed after a `continue`). 161 tests had passed. |
 | 2026-10-11 | A4 positive type check | `aa4b69f` | `38135507009` | ❌ tests passed, APK build failed: `ToolResult` imported from both `models.dart` and `tool_result.dart`. |
 | 2026-10-11 | A1 removed the dead legacy `ToolResult` | `7c32bc3` | `38135906029` | ✅ **green, 11m24s, 180 tests.** Vulkan + vision + onnxruntime all verified present. |
