@@ -120,16 +120,50 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
 }
 
 /// The main shell behind the optional biometric lock.
-class _LockedShell extends ConsumerWidget {
+///
+/// Stateful so it can push the lock state down to the platform window: while
+/// the lock is on the app must not be drawn into the recents thumbnail.
+class _LockedShell extends ConsumerStatefulWidget {
   const _LockedShell();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_LockedShell> createState() => _LockedShellState();
+}
+
+class _LockedShellState extends ConsumerState<_LockedShell> {
+  /// Last value pushed to the platform, so the channel is only hit on change.
+  bool? _secureApplied;
+
+  void _syncSecureWindow(bool enabled) {
+    if (_secureApplied == enabled) return;
+    _secureApplied = enabled;
+    if (enabled) {
+      SecureScreen.enable();
+    } else {
+      SecureScreen.disable();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
     final lockOn = settings['biometric_lock'] as bool? ?? false;
 
+    // FLAG_SECURE hides the app from screenshots and the Android 13+ recents
+    // thumbnail. Tie it to the lock so it is only on when the user asked for
+    // privacy, and pushed after the frame to keep build side-effect free.
+    if (_secureApplied != lockOn) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _syncSecureWindow(lockOn);
+      });
+    }
+
     return BiometricGate(
       enabled: lockOn,
+      // Way out of the fail-closed screen: the user explicitly drops the lock.
+      onDisableLock: () => ref
+          .read(settingsProvider.notifier)
+          .updateSetting('biometric_lock', false),
       child: const MainScreen(),
     );
   }
