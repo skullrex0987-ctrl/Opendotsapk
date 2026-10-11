@@ -1,7 +1,12 @@
 name: localmind
 description: A fully local, privacy-first AI agent that runs entirely on-device.
 publish_to: 'none'
-version: 1.0.0+1
+# The version name must equal the release tag (v1.2.0 -> 1.2.0): the release
+# workflow fails the build when the APK's versionName disagrees with the tag, so
+# a drift here is caught before anything ships. The build number is only a
+# local default — CI overrides it with the run number so versionCode is
+# monotonic across releases.
+version: 1.2.0+1
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
@@ -91,6 +96,17 @@ dependencies:
   # Must be ^13: v11 depends on win32 ^5, and share_plus 13 requires win32 ^6,
   # so v11 cannot coexist with the share sheet.
   device_info_plus: ^13.3.0
+
+  # The version shown in Settings must be read from the installed package, not
+  # a compiled-in constant — the constant it replaces had drifted (the UI said
+  # 1.0.0 while the release tag was v1.2.0). See AppConstants.resolvedVersion().
+  #
+  # Must be ^10. package_info_plus 8.x AND 9.x still depend on win32 ^5.5.3,
+  # which cannot coexist with share_plus 13.3.1 / device_info_plus 13.3.0 (both
+  # win32 ^6.0.1) — the same conflict class that forced device_info_plus to 13.
+  # 10.x depends on win32 ^6.0.1, and its SDK floor (Dart >=3.10.0, Flutter
+  # >=3.38.1) is exactly that of those two packages, so it resolves as a set.
+  package_info_plus: ^10.2.2
 
   # UI / export
   uuid: ^4.4.0

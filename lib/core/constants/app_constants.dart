@@ -1,12 +1,47 @@
 /// Core constants used throughout the application.
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 class AppConstants {
   AppConstants._();
 
   // ---------------------------------------------------------------- app info
   static const String appName = 'LocalMind';
-  static const String appVersion = '1.0.0';
+
+  /// Fallback app version — used only when the real one cannot be read.
+  ///
+  /// The version a user sees should come from [resolvedVersion], which reads it
+  /// from the installed package. A compiled-in constant cannot know what the
+  /// release tag was: this value had drifted to `1.0.0` while the release tag
+  /// was `v1.2.0`. Keep it equal to `version:` in pubspec.yaml regardless — it
+  /// is what [resolvedVersion] returns when package_info_plus is unavailable
+  /// (unit tests, a platform with no implementation), so the UI still shows a
+  /// sane string instead of nothing.
+  static const String appVersion = '1.2.0';
+
+  /// Version of the build actually installed, e.g. `1.2.0` or `1.2.0+42`.
+  ///
+  /// Reads the package manifest through package_info_plus instead of trusting a
+  /// compiled-in constant, so Settings reports the version the device really
+  /// has. The plugin talks to a platform channel and a channel can fail
+  /// (headless tests, a platform with no implementation), so this returns
+  /// [appVersion] rather than throwing — a version label is not worth crashing
+  /// a screen over.
+  ///
+  /// Call sites still rendering the [appVersion] constant should move to this
+  /// future once they live on a screen that can hold async state.
+  static Future<String> resolvedVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (info.version.isEmpty) return appVersion;
+      return info.buildNumber.isEmpty
+          ? info.version
+          : '${info.version}+${info.buildNumber}';
+    } catch (_) {
+      return appVersion;
+    }
+  }
+
   static const Color primaryColor = Color(0xFF6366F1);
 
   // ------------------------------------------------------------ model storage

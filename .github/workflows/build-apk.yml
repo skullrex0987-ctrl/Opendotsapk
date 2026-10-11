@@ -2,10 +2,19 @@ name: Build APK
 
 # Builds a release APK in GitHub's cloud (free for public repos).
 # No local machine or VPS resources required.
+#
+# Signing and versioning — and the checks that guard them — are described in
+# docs/RELEASE_SIGNING.md. In short:
+#   - the version name comes from the pushed tag (v1.2.0 -> 1.2.0) and the
+#     version code from the CI run number, so the APK cannot drift from the tag;
+#   - the release keystore is decoded from the ANDROID_KEYSTORE_B64 secret;
+#   - the job FAILS if the APK's versionName does not equal the tag, or if the
+#     APK does not verify as signed.
 
 on:
   push:
     branches: [ main, master ]
+    tags: [ 'v*' ]
   workflow_dispatch:      # allows manual trigger from the Actions tab
 
 jobs:
@@ -32,6 +41,51 @@ jobs:
 
       - name: Flutter version
         run: flutter --version
+
+      # The pushed tag is the single source of truth for the version name. A
+      # branch or manual build has no tag, so pubspec.yaml stands in — the
+      # equality check further down still needs an expected value either way.
+      - name: Derive version from tag
+        id: version
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            tag="${GITHUB_REF_NAME}"
+          else
+            base="$(sed -nE 's/^version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' pubspec.yaml | head -n1)"
+            tag="v${base}"
+          fi
+          version="${tag#v}"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "Building version '${version}' (tag '${tag}')."
+
+      # Without a keystore the build still succeeds, but it is signed with the
+      # debug key and cannot be updated in place — so the artifact is renamed to
+      # say so (see the Collect APK step) and a warning is raised here.
+      - name: Configure release signing
+        id: signing
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ANDROID_KEYSTORE_B64:-}" ]; then
+            echo "has_keystore=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Debug-signed build::ANDROID_KEYSTORE_B64 is not set. This APK will be signed with the debug key and cannot be installed as an update or published. See docs/RELEASE_SIGNING.md."
+            exit 0
+          fi
+          echo "$ANDROID_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          {
+            echo "storeFile=$RUNNER_TEMP/release.jks"
+            echo "storePassword=$ANDROID_KEYSTORE_PASSWORD"
+            echo "keyAlias=$ANDROID_KEY_ALIAS"
+            echo "keyPassword=$ANDROID_KEY_PASSWORD"
+          } > android/key.properties
+          echo "has_keystore=true" >> "$GITHUB_OUTPUT"
+          echo "Release keystore decoded; android/key.properties written."
 
       - name: Install dependencies
         run: flutter pub get
@@ -76,13 +130,49 @@ jobs:
           cd android && ./gradlew projects --console=plain -q 2>&1 | head -60; cd ..
 
       - name: Build release APK
-        run: flutter build apk --release --target-platform android-arm64
-
-      - name: Rename APK
         run: |
+          flutter build apk --release \
+            --target-platform android-arm64 \
+            --build-name "${{ steps.version.outputs.version }}" \
+            --build-number "${{ github.run_number }}"
+
+      - name: Collect APK
+        id: collect
+        run: |
+          set -euo pipefail
           mkdir -p out
-          cp build/app/outputs/flutter-apk/app-release.apk \
-             out/localmind-release.apk
+          if [ "${{ steps.signing.outputs.has_keystore }}" = "true" ]; then
+            name="localmind-${{ steps.version.outputs.version }}.apk"
+          else
+            name="localmind-${{ steps.version.outputs.version }}-DEBUGSIGNED-NOT-UPDATABLE.apk"
+          fi
+          cp build/app/outputs/flutter-apk/app-release.apk "out/${name}"
+          echo "apk_name=${name}" >> "$GITHUB_OUTPUT"
+          echo "apk_path=out/${name}" >> "$GITHUB_OUTPUT"
+          echo "Produced out/${name}"
+
+      # Gate: the APK's manifest version must equal the release tag, otherwise
+      # the artifact would silently ship a version that disagrees with its tag —
+      # exactly the drift this workflow exists to prevent.
+      - name: Verify versionName matches the release tag
+        run: |
+          set -euo pipefail
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          aapt2="$(ls "$sdk"/build-tools/*/aapt2 2>/dev/null | sort -V | tail -n1 || true)"
+          if [ -z "$aapt2" ]; then
+            echo "::error::aapt2 not found under $sdk/build-tools"
+            exit 1
+          fi
+          echo "Using $aapt2"
+          badging="$("$aapt2" dump badging "${{ steps.collect.outputs.apk_path }}")"
+          version_name="$(printf '%s\n' "$badging" | sed -nE "s/^package:.*versionName='([^']*)'.*/\1/p")"
+          version_code="$(printf '%s\n' "$badging" | sed -nE "s/^package:.*versionCode='([^']*)'.*/\1/p")"
+          expected="${{ steps.version.outputs.version }}"
+          echo "APK versionName='${version_name}' versionCode='${version_code}'; expected '${expected}'"
+          if [ "${version_name}" != "${expected}" ]; then
+            echo "::error::APK versionName '${version_name}' does not match the release tag '${expected}'. Bump pubspec.yaml or re-tag."
+            exit 1
+          fi
 
       # --- gate: the app is useless without the native runtimes --------------
       # Two silent-failure modes bit this project before, both because the
@@ -92,11 +182,11 @@ jobs:
       - name: Verify native libraries
         run: |
           echo "### .so files shipped in the APK"
-          unzip -l out/localmind-release.apk | grep -E "\.so$" || true
+          unzip -l "${{ steps.collect.outputs.apk_path }}" | grep -E "\.so$" || true
           echo
           fail=0
           for lib in libllama libggml libonnxruntime; do
-            if unzip -l out/localmind-release.apk | grep -q "$lib"; then
+            if unzip -l "${{ steps.collect.outputs.apk_path }}" | grep -q "$lib"; then
               echo "OK: $lib present."
             else
               echo "::error::$lib missing - on-device inference would fail at runtime."
@@ -106,7 +196,7 @@ jobs:
           # native_llama vendors tools/mtmd, but compiles it straight into
           # libnative_llama.so rather than shipping a separate libmtmd.so — so
           # check the symbols, not a filename, or this warns forever.
-          unzip -o -q out/localmind-release.apk \
+          unzip -o -q "${{ steps.collect.outputs.apk_path }}" \
             "lib/arm64-v8a/libnative_llama.so" -d "$RUNNER_TEMP/apkcheck"
           if strings "$RUNNER_TEMP/apkcheck/lib/arm64-v8a/libnative_llama.so" \
                | grep -qiE "mtmd|ggml_clip"; then
@@ -120,10 +210,10 @@ jobs:
           # still a working app that runs on the CPU. Silence here would hide a
           # regression though, so the failure mode is a loud warning.
           echo
-          if unzip -l out/localmind-release.apk \
+          if unzip -l "${{ steps.collect.outputs.apk_path }}" \
                | grep -qE "libggml-vulkan\.so"; then
             echo "OK: Vulkan backend shipped - GPU offload available."
-            unzip -o -q out/localmind-release.apk \
+            unzip -o -q "${{ steps.collect.outputs.apk_path }}" \
               "lib/arm64-v8a/libggml-vulkan.so" -d "$RUNNER_TEMP/apkcheck"
             if strings "$RUNNER_TEMP/apkcheck/lib/arm64-v8a/libggml-vulkan.so" \
                  | grep -qi "ggml_backend_vk_reg"; then
@@ -137,9 +227,35 @@ jobs:
 
           exit $fail
 
+      # Records which key signed the APK. Fails the job if the APK is not
+      # validly signed at all (apksigner exits non-zero, and pipefail carries it
+      # through the tee).
+      - name: Verify APK signature
+        run: |
+          set -euo pipefail
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          build_tools="$(ls -d "$sdk"/build-tools/* | sort -V | tail -n1 || true)"
+          "$build_tools/apksigner" verify --print-certs --verbose \
+            "${{ steps.collect.outputs.apk_path }}" | tee out/apk-signature.txt
+          if [ "${{ steps.signing.outputs.has_keystore }}" = "true" ]; then
+            echo "Signed with the configured release key."
+          else
+            echo "::warning::Signed with the debug key — not updatable and not publishable."
+          fi
+
+      - name: Write SHA256SUMS
+        run: |
+          set -euo pipefail
+          cd out
+          sha256sum "${{ steps.collect.outputs.apk_name }}" > SHA256SUMS
+          cat SHA256SUMS
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: localmind-apk
-          path: out/localmind-release.apk
+          path: |
+            out/${{ steps.collect.outputs.apk_name }}
+            out/SHA256SUMS
+            out/apk-signature.txt
           retention-days: 30

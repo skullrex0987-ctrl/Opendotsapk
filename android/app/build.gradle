@@ -22,6 +22,83 @@ if (flutterVersionName == null) {
     flutterVersionName = "1.0"
 }
 
+// ---------------------------------------------------------------------------
+// Release signing.
+//
+// Release APKs used to be signed with the auto-generated debug key, which is
+// regenerated on every machine and every CI runner. Two builds of the same
+// version therefore carried different signatures, and Android refuses to
+// install an update whose signature differs from the installed app's — so
+// every release forced users to uninstall first, wiping their data. The
+// keystore below is stable across builds, so updates install in place.
+//
+// The signing material is read, in order, from:
+//   1. android/key.properties (the standard Flutter location; git-ignored), or
+//   2. the ANDROID_KEYSTORE_* environment variables (how CI supplies it: it
+//      base64-decodes the keystore secret into a temp file and points
+//      storeFile at it), or
+//   3. ANDROID_KEYSTORE_B64 itself, decoded here, for a local build that only
+//      exports that one variable.
+//
+// When no keystore is configured the build still succeeds — a contributor
+// without the key can still compile — but the release artifact is signed with
+// the debug key, a loud warning is printed, and CI renames it with the
+// `-DEBUGSIGNED-NOT-UPDATABLE` suffix so it can never be mistaken for a
+// shippable release. See docs/RELEASE_SIGNING.md for creating the key.
+// ---------------------------------------------------------------------------
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file("key.properties")
+def hasKeystoreProperties = keystorePropertiesFile.exists()
+if (hasKeystoreProperties) {
+    keystorePropertiesFile.withReader("UTF-8") { reader ->
+        keystoreProperties.load(reader)
+    }
+}
+
+def releaseStoreFile = hasKeystoreProperties ? keystoreProperties.getProperty("storeFile") : null
+def releaseStorePassword = hasKeystoreProperties ? keystoreProperties.getProperty("storePassword") : null
+def releaseKeyAlias = hasKeystoreProperties ? keystoreProperties.getProperty("keyAlias") : null
+def releaseKeyPassword = hasKeystoreProperties ? keystoreProperties.getProperty("keyPassword") : null
+
+// Environment fallback. CI normally writes key.properties (above); these cover
+// a local build that exports the variables instead.
+if (releaseStoreFile == null) releaseStoreFile = System.getenv("ANDROID_KEYSTORE_PATH")
+if (releaseStorePassword == null) releaseStorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+if (releaseKeyAlias == null) releaseKeyAlias = System.getenv("ANDROID_KEY_ALIAS")
+if (releaseKeyPassword == null) releaseKeyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+
+// ANDROID_KEYSTORE_B64 carries the keystore bytes themselves, base64-encoded.
+// CI decodes this into key.properties before the build; decoding it here too
+// means the same single secret works for a local `flutter build` with no
+// key.properties, without writing the keystore anywhere in the repo.
+if (releaseStoreFile == null && System.getenv("ANDROID_KEYSTORE_B64")) {
+    def decodedKeystore = File.createTempFile("localmind-release-", ".jks")
+    decodedKeystore.bytes = System.getenv("ANDROID_KEYSTORE_B64").decodeBase64()
+    releaseStoreFile = decodedKeystore.absolutePath
+}
+
+def hasReleaseKeystore = releaseStoreFile != null &&
+        releaseStorePassword != null &&
+        releaseKeyAlias != null &&
+        releaseKeyPassword != null &&
+        file(releaseStoreFile).exists()
+
+// Only shout when a release is actually being assembled; debug/run builds do
+// not care and should not be buried in warnings.
+def buildingRelease = gradle.startParameter.taskNames.any { it.toLowerCase().contains("release") }
+if (buildingRelease && !hasReleaseKeystore) {
+    logger.warn("")
+    logger.warn("**********************************************************************")
+    logger.warn("* WARNING: no release keystore configured.                           *")
+    logger.warn("* This release APK will be signed with the auto-generated DEBUG key. *")
+    logger.warn("* It therefore CANNOT be installed as an update over an existing     *")
+    logger.warn("* install and cannot be published.                                   *")
+    logger.warn("* Set key.properties or the ANDROID_KEYSTORE_* environment vars.     *")
+    logger.warn("* See docs/RELEASE_SIGNING.md.                                       *")
+    logger.warn("**********************************************************************")
+    logger.warn("")
+}
+
 android {
     namespace = "com.localmind.localmind"
     // flutter_tts / geolocator_android / shared_preferences_android /
@@ -56,11 +133,31 @@ android {
         }
     }
 
+    // Declared only when a complete keystore is present, so a half-configured
+    // release signing config can never be selected by accident.
+    signingConfigs {
+        if (hasReleaseKeystore) {
+            release {
+                storeFile file(releaseStoreFile)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // Signed with the debug key so `flutter build apk --release`
-            // works without extra setup. Replace for Play Store publishing.
-            signingConfig = signingConfigs.debug
+            // The real release key when one is configured; the debug key
+            // otherwise, so an unconfigured checkout still builds (CI names
+            // that artifact -DEBUGSIGNED-NOT-UPDATABLE.apk).
+            signingConfig = hasReleaseKeystore ? signingConfigs.release : signingConfigs.debug
+            // Left off deliberately. R8 shrinking over this app's native/JNI and
+            // reflection surface (workmanager, permission_handler, onnxruntime)
+            // needs keep rules the project does not carry yet, and a stripped
+            // class fails only at runtime — which CI cannot catch. Enable
+            // together with a proguard-rules.pro in a change that can be
+            // device-tested.
             minifyEnabled = false
             shrinkResources = false
         }
