@@ -47,6 +47,21 @@ void main() {
       expect(v.ok, isTrue);
     });
 
+    test('verifies a resumed download against the full-file size', () {
+      // After a 206 resume the received count is the TOTAL size of the .part
+      // (existing + newly fetched). The server's Content-Length describes only
+      // the remaining bytes, so it must not be passed in — the finished file
+      // must match the manifest size exactly.
+      final v = verifyDownload(
+        receivedBytes: 5000,
+        expectedSize: 5000,
+        expectedSha256: _shaA,
+        actualSha256: _shaA,
+      );
+      expect(v.ok, isTrue);
+      expect(v.verdict, DownloadVerdict.ok);
+    });
+
     test('rejects a truncated file (fewer bytes than the manifest size)', () {
       final v = verifyDownload(
         receivedBytes: 900,
@@ -226,6 +241,23 @@ void main() {
       );
       expect(plan.restart, isTrue);
       expect(plan.startByte, 0);
+    });
+
+    test('resumes when the stored Accept-Ranges is unknown', () {
+      // A 206 response often omits Accept-Ranges, so the stored value is
+      // null ("unknown"). Unknown must mean "try it" — treating it as "no
+      // ranges" discarded every partial and restarted 2 GB files from zero
+      // after the first interruption.
+      final plan = planResume(
+        existingBytes: 1000,
+        expectedSize: 5000,
+        storedEtag: '"etag"',
+      );
+      expect(plan.restart, isFalse);
+      expect(plan.isResume, isTrue);
+      expect(plan.startByte, 1000);
+      expect(plan.headers['Range'], 'bytes=1000-');
+      expect(plan.headers['If-Range'], '"etag"');
     });
   });
 

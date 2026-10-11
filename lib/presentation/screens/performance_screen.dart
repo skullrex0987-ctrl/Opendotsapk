@@ -32,6 +32,7 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
 
   bool _benchmarking = false;
   String? _benchmarkResult;
+  double _lastTokensPerSecond = 0.0;
 
   @override
   void initState() {
