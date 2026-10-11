@@ -151,7 +151,9 @@ class _AssistantGroup extends ConsumerWidget {
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: PersonalitySelector(current: settings['personality'] as String?),
+          child: PersonalitySelector(
+            current: settings['personality'] as String?,
+          ),
         ),
         const ScreenRowDivider(),
         Padding(
@@ -191,17 +193,15 @@ class ModelsTile extends ConsumerWidget {
       leading: const ScreenRowIcon(icon: Icons.model_training),
       title: const Text('Download and select models'),
       subtitle: Text(
-        loaded
-            ? 'Loaded: ${llmService.modelPath}'
-            : 'No model loaded',
+        loaded ? 'Loaded: ${llmService.modelPath}' : 'No model loaded',
       ),
       trailing: Icon(
         loaded ? Icons.check_circle : Icons.warning_amber_rounded,
         color: loaded ? AppColors.success : AppColors.warning,
       ),
-      onTap: () => Navigator.of(
-        context,
-      ).push(AppPageRoute(builder: (_) => const ModelsScreen())),
+      onTap: () =>
+          Navigator.of(context)
+              .push(AppPageRoute(builder: (_) => const ModelsScreen())),
     );
   }
 }
@@ -245,9 +245,7 @@ class PermissionList extends ConsumerWidget {
         initialValue: current,
         tooltip: 'Permission',
         onSelected: (value) {
-          ref
-              .read(toolPermissionsProvider.notifier)
-              .setPermission(tool, value);
+          ref.read(toolPermissionsProvider.notifier).setPermission(tool, value);
         },
         itemBuilder: (context) => [
           const PopupMenuItem(value: 'allow', child: Text('Allow')),
@@ -408,18 +406,16 @@ class _AboutSectionState extends State<AboutSection> {
           icon: Icons.speed,
           title: 'Performance',
           subtitle: 'Backend, chipset and a throughput benchmark',
-          onTap: () => Navigator.of(context).push(
-            AppPageRoute(builder: (_) => const PerformanceScreen()),
-          ),
+          onTap: () => Navigator.of(context)
+              .push(AppPageRoute(builder: (_) => const PerformanceScreen())),
         ),
         const ScreenRowDivider(),
         _NavRow(
           icon: Icons.cloud_queue,
           title: 'Cloud Models',
           subtitle: 'Bring your own API key — optional, off by default',
-          onTap: () => Navigator.of(context).push(
-            AppPageRoute(builder: (_) => const CloudModelsScreen()),
-          ),
+          onTap: () => Navigator.of(context)
+              .push(AppPageRoute(builder: (_) => const CloudModelsScreen())),
         ),
         const ScreenRowDivider(),
         Padding(
@@ -438,9 +434,8 @@ class _AboutSectionState extends State<AboutSection> {
                     // a compiled-in constant that drifts from the release tag.
                     FutureBuilder<String>(
                       future: _version,
-                      builder: (context, snap) => Text(
-                        snap.data ?? AppConstants.appVersion,
-                      ),
+                      builder: (context, snap) =>
+                          Text(snap.data ?? AppConstants.appVersion),
                     ),
                   ],
                 ),
@@ -855,9 +850,8 @@ class _EraseDataSectionState extends ConsumerState<EraseDataSection> {
     } catch (e) {
       Log.e('erase all data failed: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Erase failed: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Erase failed: $e')));
     } finally {
       if (mounted) setState(() => _busy = false);
     }

@@ -183,9 +183,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
 
     if (!mounted) return;
 
-    Navigator.of(context).pushReplacement(
-      AppPageRoute(builder: (_) => const ModelsScreen()),
-    );
+    Navigator.of(context)
+        .pushReplacement(AppPageRoute(builder: (_) => const ModelsScreen()));
   }
 }
 

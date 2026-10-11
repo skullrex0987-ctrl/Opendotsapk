@@ -421,10 +421,7 @@ class _RowSkeleton extends StatelessWidget {
             Container(
               width: 38,
               height: 38,
-              decoration: BoxDecoration(
-                color: bar,
-                shape: BoxShape.circle,
-              ),
+              decoration: BoxDecoration(color: bar, shape: BoxShape.circle),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -433,11 +430,7 @@ class _RowSkeleton extends StatelessWidget {
                 children: [
                   Container(height: 12, color: bar),
                   const SizedBox(height: 8),
-                  Container(
-                    height: 10,
-                    width: 140,
-                    color: bar,
-                  ),
+                  Container(height: 10, width: 140, color: bar),
                 ],
               ),
             ),
@@ -513,16 +506,11 @@ class _ModelRow extends StatelessWidget {
                     Text(
                       model.displayName,
                       style: theme.textTheme.titleMedium?.copyWith(
-                        color: usable
-                            ? null
-                            : scheme.onSurfaceVariant,
+                        color: usable ? null : scheme.onSurfaceVariant,
                       ),
                     ),
                     const SizedBox(height: 3),
-                    Text(
-                      model.description,
-                      style: theme.textTheme.bodySmall,
-                    ),
+                    Text(model.description, style: theme.textTheme.bodySmall),
                     const SizedBox(height: 8),
                     _MetaLine(model: model),
                     const SizedBox(height: 8),
@@ -618,11 +606,7 @@ class _RoleIcon extends StatelessWidget {
         color: tint.withValues(alpha: 0.14),
         shape: BoxShape.circle,
       ),
-      child: Icon(
-        usable ? icon : Icons.block,
-        size: 19,
-        color: tint,
-      ),
+      child: Icon(usable ? icon : Icons.block, size: 19, color: tint),
     );
   }
 }
@@ -767,10 +751,7 @@ class _DownloadProgress extends StatelessWidget {
               ),
             ),
             const Spacer(),
-            Text(
-              'of $sizeLabel',
-              style: theme.textTheme.labelSmall,
-            ),
+            Text('of $sizeLabel', style: theme.textTheme.labelSmall),
           ],
         ),
       ],

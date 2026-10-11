@@ -32,14 +32,17 @@ void main() {
       expect(theme.brightness, Brightness.dark);
     });
 
-    test('puts the scaffold on the app background, not on the card surface', () {
-      final theme = AppTheme.dark;
+    test(
+      'puts the scaffold on the app background, not on the card surface',
+      () {
+        final theme = AppTheme.dark;
 
-      expect(theme.scaffoldBackgroundColor, AppColors.background);
-      // Cards must be a *different*, lighter step or elevation carries no
-      // information at all on a near-black page.
-      expect(theme.colorScheme.surface, isNot(AppColors.background));
-    });
+        expect(theme.scaffoldBackgroundColor, AppColors.background);
+        // Cards must be a *different*, lighter step or elevation carries no
+        // information at all on a near-black page.
+        expect(theme.colorScheme.surface, isNot(AppColors.background));
+      },
+    );
 
     test('exposes the brand and accent colours through the scheme', () {
       final scheme = AppTheme.dark.colorScheme;
@@ -103,10 +106,7 @@ void main() {
       double luma(Color c) => c.computeLuminance();
 
       expect(luma(AppColors.surface), greaterThan(luma(AppColors.background)));
-      expect(
-        luma(AppColors.surfaceHigh),
-        greaterThan(luma(AppColors.surface)),
-      );
+      expect(luma(AppColors.surfaceHigh), greaterThan(luma(AppColors.surface)));
     });
   });
 }

@@ -376,10 +376,7 @@ class _McpServersPanelState extends ConsumerState<McpServersPanel> {
                 color: AppColors.accent,
                 size: 30,
               ),
-              title: Text(
-                t.qualifiedName,
-                style: theme.textTheme.bodyMedium,
-              ),
+              title: Text(t.qualifiedName, style: theme.textTheme.bodyMedium),
               subtitle: Text(
                 t.description.isEmpty ? '(no description)' : t.description,
                 style: theme.textTheme.bodySmall,
@@ -554,7 +551,9 @@ class _ServerCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final tint = server.enabled ? AppColors.success : theme.colorScheme.onSurfaceVariant;
+    final tint = server.enabled
+        ? AppColors.success
+        : theme.colorScheme.onSurfaceVariant;
 
     return Card(
       margin: EdgeInsets.zero,

@@ -129,31 +129,34 @@ class _CloudModelsScreenState extends ConsumerState<CloudModelsScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
-          _privacyCard(),
+          FadeSlideIn(child: _privacyCard()),
           const SizedBox(height: 20),
-          _routingCard(settings),
+          FadeSlideIn(delay: staggerDelay(1), child: _routingCard(settings)),
           const SizedBox(height: 20),
-          ScreenSection(
-            title: 'Providers',
-            subtitle:
-                'Each one needs its own key, stored in this device\'s '
-                'keystore. Nothing is sent until you add one.',
-            padding: EdgeInsets.zero,
-            child: Column(
-              children: [
-                for (var i = 0; i < CloudCatalog.providers.length; i++) ...[
-                  _providerTile(
-                    CloudCatalog.providers[i],
-                    activeProvider == CloudCatalog.providers[i].id,
-                  ),
-                  if (i != CloudCatalog.providers.length - 1)
-                    const ScreenRowDivider(),
+          FadeSlideIn(
+            delay: staggerDelay(2),
+            child: ScreenSection(
+              title: 'Providers',
+              subtitle:
+                  'Each one needs its own key, stored in this device\'s '
+                  'keystore. Nothing is sent until you add one.',
+              padding: EdgeInsets.zero,
+              child: Column(
+                children: [
+                  for (var i = 0; i < CloudCatalog.providers.length; i++) ...[
+                    _providerTile(
+                      CloudCatalog.providers[i],
+                      activeProvider == CloudCatalog.providers[i].id,
+                    ),
+                    if (i != CloudCatalog.providers.length - 1)
+                      const ScreenRowDivider(),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
           const SizedBox(height: 20),
-          _usageCard(),
+          FadeSlideIn(delay: staggerDelay(3), child: _usageCard()),
         ],
       ),
     );
@@ -296,7 +299,9 @@ class _CloudModelsScreenState extends ConsumerState<CloudModelsScreen> {
           ),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => Navigator.of(context).push(
-            AppPageRoute(builder: (_) => CloudProviderScreen(provider: provider)),
+            AppPageRoute(
+              builder: (_) => CloudProviderScreen(provider: provider),
+            ),
           ),
         );
       },
@@ -399,8 +404,10 @@ class _ModeCard extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            local ? 'Free and private. Works offline.' : 'Needs your API key. '
-                'You are billed.',
+            local
+                ? 'Free and private. Works offline.'
+                : 'Needs your API key. '
+                      'You are billed.',
             style: theme.textTheme.bodySmall,
           ),
         ],
@@ -423,9 +430,8 @@ class _ActiveChip extends StatelessWidget {
       ),
       child: Text(
         'active',
-        style: Theme.of(
-          context,
-        ).textTheme.labelSmall?.copyWith(color: AppColors.success),
+        style: Theme.of(context).textTheme.labelSmall
+            ?.copyWith(color: AppColors.success),
       ),
     );
   }
@@ -783,9 +789,8 @@ class _CloudProviderScreenState extends ConsumerState<CloudProviderScreen> {
     // invalid, but never persist a URL that failed validation.
     final error = baseUrlValidationError(url);
     if (error != null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(error)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error)));
       return;
     }
     final cfg = Map<String, String>.from(
@@ -794,9 +799,8 @@ class _CloudProviderScreenState extends ConsumerState<CloudProviderScreen> {
     cfg['baseUrl'] = url;
     await SecureStore.instance.setProviderConfig(widget.provider.id, cfg);
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Base URL saved.')));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('Base URL saved.')));
     _refreshRouter();
   }
 

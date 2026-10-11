@@ -119,7 +119,11 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
             value: backendLabel,
             numeric: backend != 'none',
           ),
-          _Stat(label: 'Layers offloaded', value: '${llm.gpuLayers}', numeric: true),
+          _Stat(
+            label: 'Layers offloaded',
+            value: '${llm.gpuLayers}',
+            numeric: true,
+          ),
           _Stat(label: 'CPU threads', value: '${llm.threads}', numeric: true),
         ],
       ),
@@ -200,7 +204,10 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
               // The number is the setting; it is the thing being changed, so it
               // gets the accent rather than a grey label.
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 3,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.accent.withValues(alpha: 0.14),
                   borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
@@ -340,11 +347,7 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
             const SizedBox(height: 10),
             Row(
               children: [
-                Icon(
-                  Icons.info_outline,
-                  size: 14,
-                  color: AppColors.warning,
-                ),
+                Icon(Icons.info_outline, size: 14, color: AppColors.warning),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
@@ -360,8 +363,7 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
             // The comparison is the point of this card, so it gets the
             // animation: two bars growing to the same scale is the fastest way
             // to communicate "these are close" or "this one wins".
-            if (cpu != null && gpu != null)
-              _ComparisonBars(cpu: cpu, gpu: gpu),
+            if (cpu != null && gpu != null) _ComparisonBars(cpu: cpu, gpu: gpu),
             if (cpu == null && gpu == null && _lastTokensPerSecond > 0)
               _SingleBar(
                 label: 'Last measurement',
@@ -579,11 +581,7 @@ class _Card extends StatelessWidget {
 /// are different kinds of fact, and colour is the cheapest way to say which is
 /// the measurement.
 class _Stat extends StatelessWidget {
-  const _Stat({
-    required this.label,
-    required this.value,
-    this.numeric = false,
-  });
+  const _Stat({required this.label, required this.value, this.numeric = false});
 
   final String label;
   final String value;
@@ -621,11 +619,7 @@ class _Stat extends StatelessWidget {
 
 /// A small pill for a state that needs words ("not used", "active").
 class _Tag extends StatelessWidget {
-  const _Tag({
-    required this.label,
-    required this.color,
-    this.icon,
-  });
+  const _Tag({required this.label, required this.color, this.icon});
 
   final String label;
   final Color color;
@@ -648,9 +642,8 @@ class _Tag extends StatelessWidget {
           ],
           Text(
             label,
-            style: Theme.of(
-              context,
-            ).textTheme.labelSmall?.copyWith(color: color),
+            style: Theme.of(context).textTheme.labelSmall
+                ?.copyWith(color: color),
           ),
         ],
       ),
@@ -798,15 +791,18 @@ class _Verdict extends StatelessWidget {
     final Color tint;
 
     if (ratio < 1.15) {
-      verdict = 'Both backends perform about the same on this phone, so the '
+      verdict =
+          'Both backends perform about the same on this phone, so the '
           'CPU is the safer choice — it runs cooler.';
       tint = scheme.onSurfaceVariant;
     } else if (gpuWins) {
-      verdict = 'The GPU is ${pct.toStringAsFixed(0)}% faster here, so it '
+      verdict =
+          'The GPU is ${pct.toStringAsFixed(0)}% faster here, so it '
           'has been selected.';
       tint = AppColors.brand;
     } else {
-      verdict = 'The CPU is ${pct.toStringAsFixed(0)}% faster on this phone, '
+      verdict =
+          'The CPU is ${pct.toStringAsFixed(0)}% faster on this phone, '
           'which is common on midrange GPUs. It has been selected.';
       tint = AppColors.accent;
     }

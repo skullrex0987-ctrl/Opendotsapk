@@ -20,6 +20,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../core/theme/motion.dart';
 import '../../core/utils/log.dart';
 import '../providers/providers.dart';
 import '../widgets/screen_empty_state.dart';
@@ -108,7 +109,11 @@ List<_DayGroup>? _groupByDay(List<Map<String, dynamic>> entries) {
     if (ms == null) return null;
 
     final date = DateTime.fromMillisecondsSinceEpoch(ms);
-    final key = DateTime(date.year, date.month, date.day).millisecondsSinceEpoch;
+    final key = DateTime(
+      date.year,
+      date.month,
+      date.day,
+    ).millisecondsSinceEpoch;
 
     if (key != currentKey) {
       currentKey = key;
@@ -157,9 +162,9 @@ class _Timeline extends StatelessWidget {
       return ListView.builder(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         itemCount: entries.length,
-        itemBuilder: (context, index) => _TimelineRow(
-          entry: entries[index],
-          isFirst: index == 0,
+        itemBuilder: (context, index) => FadeSlideIn(
+          delay: staggerDelay(index),
+          child: _TimelineRow(entry: entries[index], isFirst: index == 0),
         ),
       );
     }
@@ -183,25 +188,27 @@ class _Timeline extends StatelessWidget {
           );
         }
 
-        return Column(
-          key: ValueKey<int>(groupIndex),
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: EdgeInsets.only(
-                top: isFirstGroup ? 4 : 20,
-                bottom: 8,
-                left: 4,
-              ),
-              child: Text(
-                group.label,
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.primary,
+        return FadeSlideIn(
+          delay: staggerDelay(groupIndex),
+          child: Column(
+            key: ValueKey<int>(groupIndex),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: EdgeInsets.only(
+                  top: isFirstGroup ? 4 : 20,
+                  bottom: 8,
+                  left: 4,
+                ),
+                child: Text(
+                  group.label,
+                  style: Theme.of(context).textTheme.labelMedium
+                      ?.copyWith(color: Theme.of(context).colorScheme.primary),
                 ),
               ),
-            ),
-            ...rows,
-          ],
+              ...rows,
+            ],
+          ),
         );
       },
     );
@@ -405,10 +412,7 @@ class _DetailLine extends StatelessWidget {
       child: RichText(
         text: TextSpan(
           children: [
-            TextSpan(
-              text: '$label: ',
-              style: theme.textTheme.labelSmall,
-            ),
+            TextSpan(text: '$label: ', style: theme.textTheme.labelSmall),
             TextSpan(
               text: value,
               style: theme.textTheme.bodySmall?.copyWith(
@@ -446,9 +450,7 @@ class _PermissionChip extends StatelessWidget {
       ),
       child: Text(
         text,
-        style: Theme.of(
-          context,
-        ).textTheme.labelSmall?.copyWith(color: tint),
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(color: tint),
       ),
     );
   }
@@ -462,10 +464,7 @@ class _Toolbar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: actions,
-    );
+    return Row(mainAxisAlignment: MainAxisAlignment.end, children: actions);
   }
 }
 
@@ -587,9 +586,7 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
                                 height: 1.35,
                                 color:
                                     tint ??
-                                    Theme.of(
-                                      context,
-                                    ).colorScheme.onSurface,
+                                    Theme.of(context).colorScheme.onSurface,
                               ),
                             ),
                           ),

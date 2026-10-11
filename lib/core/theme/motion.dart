@@ -62,6 +62,19 @@ class AppMotion {
   }
 }
 
+/// Per-item delay for a staggered entrance.
+///
+/// Only the first few rows are delayed. Staggering 200 items by 45 ms each
+/// would leave the last one invisible for nine seconds, which reads as a hang
+/// rather than as polish — so past [staggerWindow] the delay is capped and the
+/// list animates in a wave instead of a queue.
+const int staggerWindow = 6;
+const int staggerStepMs = 45;
+
+/// Delay for item [index] of a staggered list. Pass straight to [FadeSlideIn].
+Duration staggerDelay(int index) =>
+    Duration(milliseconds: index.clamp(0, staggerWindow) * staggerStepMs);
+
 /// A push transition built on [AppMotion.fadeSlide].
 ///
 /// Use it instead of `MaterialPageRoute` for screens opened from the shell:
@@ -117,9 +130,14 @@ class FadeSlideIn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final total = duration + delay;
-    final begin =
-        delay.inMilliseconds /
-        (total.inMilliseconds == 0 ? 1 : total.inMilliseconds).clamp(0.0, 0.99);
+    // Where in [total] the visible part of the animation starts, as a 0..1
+    // fraction. The clamp has to be applied to the *ratio* — clamping the
+    // denominator instead (the shape this used to have) leaves the ratio
+    // unbounded, and any delay at all hands `Interval` a begin above 1.0,
+    // which trips its own assertion and throws while the frame is building.
+    final begin = total.inMilliseconds == 0
+        ? 0.0
+        : (delay.inMilliseconds / total.inMilliseconds).clamp(0.0, 0.99);
 
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: 0, end: 1),

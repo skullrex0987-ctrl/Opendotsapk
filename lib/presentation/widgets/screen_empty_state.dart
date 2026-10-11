@@ -80,11 +80,7 @@ class ScreenEmptyState extends StatelessWidget {
                 width: 1.5,
               ),
             ),
-            child: Icon(
-              icon,
-              size: compact ? 26 : 34,
-              color: colour,
-            ),
+            child: Icon(icon, size: compact ? 26 : 34, color: colour),
           ),
           SizedBox(height: compact ? 14 : 20),
           Text(

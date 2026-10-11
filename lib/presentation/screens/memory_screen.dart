@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../core/theme/motion.dart';
 import '../widgets/screen_empty_state.dart';
 
 /// The accent colour and glyph for each memory type.
@@ -75,11 +76,14 @@ class MemoryList extends ConsumerWidget {
                   itemCount: memories.length,
                   itemBuilder: (context, index) {
                     final memory = memories[index];
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: MemoryCard(
-                        memory: memory,
-                        onDelete: () => _deleteMemory(context, index),
+                    return FadeSlideIn(
+                      delay: staggerDelay(index),
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: MemoryCard(
+                          memory: memory,
+                          onDelete: () => _deleteMemory(context, index),
+                        ),
                       ),
                     );
                   },
@@ -252,11 +256,7 @@ class MemoryCard extends StatelessWidget {
                         color: tint.withValues(alpha: 0.14),
                         shape: BoxShape.circle,
                       ),
-                      child: Icon(
-                        _iconForType(type),
-                        color: tint,
-                        size: 18,
-                      ),
+                      child: Icon(_iconForType(type), color: tint, size: 18),
                     ),
                     title: Text(
                       memory['content'] as String,
@@ -270,9 +270,7 @@ class MemoryCard extends StatelessWidget {
                           const SizedBox(width: 8),
                           Flexible(
                             child: Text(
-                              _formatTimestamp(
-                                memory['timestamp'] as int,
-                              ),
+                              _formatTimestamp(memory['timestamp'] as int),
                               style: theme.textTheme.labelSmall,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -325,9 +323,7 @@ class _TypeBadge extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: Theme.of(
-          context,
-        ).textTheme.labelSmall?.copyWith(color: tint),
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(color: tint),
       ),
     );
   }

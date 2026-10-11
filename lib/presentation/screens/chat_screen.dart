@@ -206,9 +206,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           Expanded(
             child: Text(
               _lastRoute!,
-              style: Theme.of(
-                context,
-              ).textTheme.labelSmall?.copyWith(color: tint),
+              style: Theme.of(context).textTheme.labelSmall
+                  ?.copyWith(color: tint),
             ),
           ),
         ],
@@ -234,9 +233,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   width: 60,
                   height: 60,
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(
-                      AppTheme.radiusMedium,
-                    ),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
                     border: Border.all(
                       color: scheme.outlineVariant.withValues(alpha: 0.5),
                     ),
@@ -934,10 +931,7 @@ class _ChatHeader extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              Text(
-                'LocalMind',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
+              Text('LocalMind', style: Theme.of(context).textTheme.titleLarge),
               const Spacer(),
               ChatStatusChip(
                 loaded: loaded,

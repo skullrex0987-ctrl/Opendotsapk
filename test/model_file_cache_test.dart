@@ -86,9 +86,18 @@ void main() {
     test('serves a repeated query without touching the filesystem', () async {
       final cache = FilePresenceCache(probe: recorder.probe);
 
-      expect(await cache.get('/a'), const FilePresence(exists: true, length: 1));
-      expect(await cache.get('/a'), const FilePresence(exists: true, length: 1));
-      expect(await cache.get('/a'), const FilePresence(exists: true, length: 1));
+      expect(
+        await cache.get('/a'),
+        const FilePresence(exists: true, length: 1),
+      );
+      expect(
+        await cache.get('/a'),
+        const FilePresence(exists: true, length: 1),
+      );
+      expect(
+        await cache.get('/a'),
+        const FilePresence(exists: true, length: 1),
+      );
 
       expect(recorder.calls, 1, reason: 'only the first call may hit the disk');
       expect(cache.probes, 1);
@@ -110,7 +119,7 @@ void main() {
     test('a missing file is cached too', () async {
       // "Not downloaded" is the answer for most of the catalogue, so
       // re-probing it would be the single biggest source of waste.
-      recorder.resultFor('/missing') = FilePresence.missing;
+      recorder.setResult('/missing', FilePresence.missing);
       final cache = FilePresenceCache(probe: recorder.probe);
 
       expect(await cache.get('/missing'), FilePresence.missing);
@@ -121,11 +130,17 @@ void main() {
     test('invalidate forces the very next read back to the disk', () async {
       final cache = FilePresenceCache(probe: recorder.probe);
 
-      expect(await cache.get('/a'), const FilePresence(exists: true, length: 1));
-      recorder.resultFor('/a') = const FilePresence(exists: false, length: 0);
+      expect(
+        await cache.get('/a'),
+        const FilePresence(exists: true, length: 1),
+      );
+      recorder.setResult('/a', const FilePresence(exists: false, length: 0));
 
       // Still the stale answer...
-      expect(await cache.get('/a'), const FilePresence(exists: true, length: 1));
+      expect(
+        await cache.get('/a'),
+        const FilePresence(exists: true, length: 1),
+      );
 
       // ...until the write/delete path says otherwise.
       cache.invalidate('/a');
@@ -204,30 +219,32 @@ void main() {
       expect(cache.length, FilePresenceCache.maxEntries);
     });
 
-    test('agrees with the real filesystem across a download-then-delete cycle',
-        () async {
-      // End-to-end shape of the bug this cache exists to prevent: a row is
-      // asked "is it installed?" repeatedly, the file appears, and the answer
-      // must flip to true without waiting for the TTL.
-      final file = File('${dir.path}/model.gguf');
-      final cache = FilePresenceCache();
+    test(
+      'agrees with the real filesystem across a download-then-delete cycle',
+      () async {
+        // End-to-end shape of the bug this cache exists to prevent: a row is
+        // asked "is it installed?" repeatedly, the file appears, and the answer
+        // must flip to true without waiting for the TTL.
+        final file = File('${dir.path}/model.gguf');
+        final cache = FilePresenceCache();
 
-      expect((await cache.get(file.path)).exists, isFalse);
+        expect((await cache.get(file.path)).exists, isFalse);
 
-      // "Download finished."
-      file.writeAsBytesSync(List<int>.filled(2048, 1));
-      cache.invalidate(file.path);
+        // "Download finished."
+        file.writeAsBytesSync(List<int>.filled(2048, 1));
+        cache.invalidate(file.path);
 
-      final afterDownload = await cache.get(file.path);
-      expect(afterDownload.exists, isTrue);
-      expect(afterDownload.length, 2048);
+        final afterDownload = await cache.get(file.path);
+        expect(afterDownload.exists, isTrue);
+        expect(afterDownload.length, 2048);
 
-      // "User deleted it."
-      file.deleteSync();
-      cache.invalidate(file.path);
+        // "User deleted it."
+        file.deleteSync();
+        cache.invalidate(file.path);
 
-      expect((await cache.get(file.path)).exists, isFalse);
-    });
+        expect((await cache.get(file.path)).exists, isFalse);
+      },
+    );
   });
 }
 
@@ -244,12 +261,15 @@ class FileCacheProbeRecorder {
   int get calls => _paths.length;
 
   /// What the probe reports for [path] until told otherwise.
-  FilePresence resultFor(String path) => _results[path] ??=
-      FilePresence(exists: true, length: _paths.length + 1);
+  FilePresence resultFor(String path) =>
+      _results[path] ??= FilePresence(exists: true, length: _paths.length + 1);
+
+  /// Pin the probe's answer for [path], so a test can simulate the file
+  /// appearing or disappearing between two reads.
+  void setResult(String path, FilePresence value) => _results[path] = value;
 
   Future<FilePresence> probe(String path) async {
     _paths.add(path);
-    return _results[path] ??
-        FilePresence(exists: true, length: _paths.length);
+    return _results[path] ?? FilePresence(exists: true, length: _paths.length);
   }
 }

@@ -59,7 +59,10 @@ void main() {
     });
 
     test('exits are quicker than entrances', () {
-      expect(AppMotion.base.inMilliseconds, greaterThan(AppMotion.fast.inMilliseconds));
+      expect(
+        AppMotion.base.inMilliseconds,
+        greaterThan(AppMotion.fast.inMilliseconds),
+      );
     });
   });
 
@@ -85,9 +88,7 @@ void main() {
     testWidgets('is usable with a zero-duration animation', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
-          home: Scaffold(
-            body: _FadeSlideHost(duration: Duration.zero),
-          ),
+          home: Scaffold(body: _FadeSlideHost(duration: Duration.zero)),
         ),
       );
       await tester.pump();
@@ -100,9 +101,7 @@ void main() {
     testWidgets('renders its child and settles', (tester) async {
       await tester.pumpWidget(
         MaterialApp(
-          home: Scaffold(
-            body: FadeSlideIn(child: Text('card-content')),
-          ),
+          home: Scaffold(body: FadeSlideIn(child: Text('card-content'))),
         ),
       );
 
@@ -143,6 +142,75 @@ void main() {
         expect(find.text('row-$i'), findsOneWidget);
       }
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a stagger big enough to overrun the duration still builds', (
+      tester,
+    ) async {
+      // The regression: the entrance used to clamp the *denominator* of the
+      // delay/total ratio instead of the ratio itself, so any non-zero delay
+      // produced an `Interval` begin above 1.0 and threw `begin <= 1.0` while
+      // building. A delay larger than the duration is the clearest case.
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Column(
+              children: [
+                FadeSlideIn(
+                  duration: AppMotion.fast,
+                  delay: const Duration(seconds: 5),
+                  child: const Text('long-delay'),
+                ),
+                FadeSlideIn(
+                  duration: Duration.zero,
+                  delay: const Duration(seconds: 5),
+                  child: const Text('zero-duration'),
+                ),
+                const FadeSlideIn(child: Text('no-delay')),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump(AppMotion.slow);
+      expect(tester.takeException(), isNull);
+      expect(find.text('long-delay'), findsOneWidget);
+      expect(find.text('zero-duration'), findsOneWidget);
+      expect(find.text('no-delay'), findsOneWidget);
+    });
+
+    testWidgets('a stagger ends fully opaque for every row', (tester) async {
+      // A staggered row that never reaches opacity 1 is a row the user
+      // believes is disabled.
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Column(
+              children: [
+                for (var i = 0; i < 4; i++)
+                  FadeSlideIn(
+                    delay: Duration(milliseconds: i * 60),
+                    child: const Text('settled'),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump(AppMotion.slow);
+      await tester.pump(AppMotion.slow);
+
+      for (final element in find.text('settled').evaluate()) {
+        final opacity = tester.widget<Opacity>(
+          find.ancestor(
+            of: find.byWidget(element.widget),
+            matching: find.byType(Opacity),
+          ),
+        );
+        expect(opacity.opacity, 1.0);
+      }
     });
 
     testWidgets('accepts an explicit duration and dy', (tester) async {
@@ -190,9 +258,9 @@ void main() {
           home: Builder(
             builder: (context) => TextButton(
               onPressed: () => Navigator.of(context).push(
-                AppPageRoute<void>(builder: (_) => const Scaffold(
-                  body: Text('pushed-page'),
-                )),
+                AppPageRoute<void>(
+                  builder: (_) => const Scaffold(body: Text('pushed-page')),
+                ),
               ),
               child: const Text('open'),
             ),
@@ -219,9 +287,7 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           theme: AppTheme.dark,
-          home: Scaffold(
-            body: FadeSlideIn(child: Text('themed')),
-          ),
+          home: Scaffold(body: FadeSlideIn(child: Text('themed'))),
         ),
       );
       await tester.pump(AppMotion.slow);
