@@ -132,6 +132,8 @@ CI runs are cited by run id. Green = all steps succeeded.
 | 2026-10-11 | E1–E8 parse gate across all `lib`/`test` files | (local) | — | **0 real parse failures / 50 files** (`dart format --output=none`). |
 | 2026-10-11 | E1–E8 first attempt | `93e4aef` | `38145601204` | ❌ **1 test failed** — my own new ordering test. The image check ran *after* the `_candidates.isEmpty` early return, so a no-cloud device (the owner's exact state) still dropped the image. A real gap, caught by the test rather than by the phone. |
 | 2026-10-11 | E4 ordering fix, real router executed on the Dart VM | (local) | — | **15/15 pass** against the copied `router_service.dart` with a stubbed logger — covers all four config modes with an image and no vision, plus private/offline absolutes and unchanged text-only routing. |
+| 2026-10-11 | E4 ordering fix, second attempt | `0dc4938` | `38145805759` | ❌ **1 test failed** — `privacy_boundaries_test.dart` asserted `RouteTarget.local` for every combination, including image turns, which are now `refused`. Not a privacy regression (a refusal never reaches the network either), so the assertion was **tightened**, not loosened: `refused` is now expected precisely when images are present, and `local` otherwise. |
+| 2026-10-11 | E4 probe extended with the full privacy matrix | (local) | — | **17/17 pass**, including all **84 combinations** of {local, auto, cloud} × 7 prompts × images × model-ready. The matrix was replicated into the probe so this class of CI failure is caught locally first. |
 
 ### What the green run proves
 

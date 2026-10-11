@@ -71,7 +71,26 @@ void main() {
                 reason: 'mode=$mode promptLen=${prompt.length} '
                     'images=$hasImages modelReady=$localModelReady',
               );
-              expect(d.target, RouteTarget.local);
+              // The privacy promise is "nothing leaves the device", and a
+              // refusal honours it just as strictly as a local answer does.
+              //
+              // An image turn with no vision cannot be served at all: handing
+              // the picture to a text model means the plugin discards it and
+              // the model answers a question it never received. So the expected
+              // target is `refused` for image turns and `local` otherwise — and
+              // never `cloud` under any combination, which is what this test
+              // exists to prove.
+              final expectsRefusal = hasImages;
+              expect(
+                d.isRefused,
+                expectsRefusal,
+                reason: 'mode=$mode images=$hasImages modelReady=$localModelReady',
+              );
+              expect(
+                d.target,
+                expectsRefusal ? RouteTarget.refused : RouteTarget.local,
+                reason: 'mode=$mode images=$hasImages modelReady=$localModelReady',
+              );
             }
           }
         }
