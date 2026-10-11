@@ -311,6 +311,18 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
                   : const Icon(Icons.speed, size: 18),
               label: Text(_benchmarking ? 'Measuring…' : 'Run benchmark'),
             ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: (_benchmarking || !llm.isLoaded) ? null : _autoBenchmark,
+              icon: _benchmarking
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.auto_awesome, size: 18),
+              label: const Text('Auto-optimize (test CPU + GPU)'),
+            ),
             if (!llm.isLoaded) ...[
               const SizedBox(height: 8),
               Text(
@@ -373,6 +385,75 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
           '${tps.toStringAsFixed(1)} tokens/sec on $backend '
           '(${llm.gpuLayers > 0 ? '${llm.gpuLayers} layers offloaded' : 'all layers on the CPU'})';
     });
+  }
+
+  /// Run benchmarks on both CPU and GPU, then auto-select the faster backend.
+  Future<void> _autoBenchmark() async {
+    setState(() {
+      _benchmarking = true;
+      _benchmarkResult = 'Testing CPU…';
+    });
+
+    final llm = ref.read(llmServiceProvider);
+    final settings = ref.read(settingsProvider);
+    final originalMode = '${settings['gpu_offload'] ?? 'auto'}';
+
+    // Test CPU first
+    await _applyMode('cpu');
+    final cpuTps = await _measureTps(llm);
+
+    if (!mounted) return;
+    setState(() {
+      _benchmarkResult = 'CPU: ${cpuTps.toStringAsFixed(1)} tok/s. Testing GPU…';
+    });
+
+    // Test GPU
+    await _applyMode('gpu');
+    final gpuTps = await _measureTps(llm);
+
+    if (!mounted) return;
+
+    // Select the faster backend
+    final isGpuFaster = gpuTps > cpuTps;
+    await _applyMode(isGpuFaster ? 'gpu' : 'cpu');
+
+    setState(() {
+      _benchmarking = false;
+      _benchmarkResult =
+          'CPU: ${cpuTps.toStringAsFixed(1)} tok/s\n'
+          'GPU: ${gpuTps.toStringAsFixed(1)} tok/s\n'
+          '→ Auto-selected ${isGpuFaster ? 'GPU' : 'CPU'} (${((isGpuFaster ? gpuTps : cpuTps) / (isGpuFaster ? cpuTps : gpuTps) * 100 - 100).toStringAsFixed(0)}% faster)';
+    });
+  }
+
+  Future<double> _measureTps(LlmService llm) async {
+    final sw = Stopwatch()..start();
+    var tokens = 0;
+    try {
+      await for (final _ in llm.generateStream(
+        prompt: 'Count from one to twenty in words, separated by spaces.',
+        maxTokens: 96,
+      )) {
+        tokens++;
+        if (tokens >= 64) break;
+      }
+    } catch (e) {
+      return 0.0;
+    }
+    sw.stop();
+    final seconds = sw.elapsedMilliseconds / 1000.0;
+    return seconds > 0 ? tokens / seconds : 0.0;
+  }
+
+  Future<void> _applyMode(String mode) async {
+    await ref.read(settingsProvider.notifier).updateSetting('gpu_offload', mode);
+    // Reload model with new settings
+    final llm = ref.read(llmServiceProvider);
+    final path = llm.modelPath;
+    if (path != null) {
+      final layers = mode == 'cpu' ? 0 : 99;
+      await llm.loadModel(path, gpuLayers: layers);
+    }
   }
 
   Widget _npuCard() {
