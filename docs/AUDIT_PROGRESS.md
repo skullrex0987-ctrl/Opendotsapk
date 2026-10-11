@@ -50,22 +50,22 @@ audit on trust.
 
 | ID | Task | Status | Note |
 |---|---|---|---|
-| A1 | Agent/tools/permissions dead or fake | in-progress | Findings confirmed. Implementing: `ToolResult`, MethodChannel intents, `ToolPermissionStore`, planner/critic fix, agent-mode toggle. |
-| A2 | Conversation history: wrong window, wrong format | todo | |
-| A3 | Debug-key release signing, version drift | todo | |
-| A4 | Encryption key silently replaceable (data loss) | todo | |
-| A5 | No stop control; cloud streams can hang | todo | |
-| A6 | Biometric fails open; recents screenshot leak | todo | |
+| A1 | Agent/tools/permissions dead or fake | done (partial) | ToolResult, schema fix, honest statuses, orchestrator rewrite, permission store, 180-test CI green. **Still open:** real device Intents (MethodChannel), the Approve/Deny confirmation sheet, the Agent-mode toggle wiring into chat, MCP server persistence. |
+| A2 | Conversation history: wrong window, wrong format | todo | `history.take(10)` still selects the OLDEST turns and `_buildPrompt` still sends a flat transcript. Untouched. |
+| A3 | Debug-key release signing, version drift | done (needs a secret) | Version now 1.2.0 and gated against the tag in CI. Signing reads a keystore but **no keystore exists yet** — CI correctly emits `*-DEBUGSIGNED-NOT-UPDATABLE.apk` and proves it with `apksigner`. The human must run `keytool` and add the 4 secrets; see `docs/RELEASE_SIGNING.md`. |
+| A4 | Encryption key silently replaceable (data loss) | done | Typed NotFound/ReadError split; key minted only on NotFound; `resetDatabaseKey()` never auto-called; `allowBackup=false` + backup rules. |
+| A5 | No stop control; cloud streams can hang | todo | Untouched. |
+| A6 | Biometric fails open; recents screenshot leak | todo | Untouched. |
 
 ### Phase B — reliability, privacy, compliance
 
 | ID | Task | Status | Note |
 |---|---|---|---|
-| B1 | 16 KB page alignment (`libonnxruntime.so` 0x1000) | todo | |
-| B2 | Cleartext traffic; API key in Gemini URL | todo | |
-| B3 | Model download integrity/robustness | todo | |
-| B4 | Documents & retrieval (PDF, chunking, encrypted search, logs, migrations) | todo | |
-| B5 | Privacy boundaries (default local, erase-all) | todo | |
+| B1 | 16 KB page alignment (`libonnxruntime.so` 0x1000) | todo | The C8 spike measured that the LiteRT engine AAR is already 16 KB aligned, but the app's own `libonnxruntime.so` is not. Untouched. |
+| B2 | Cleartext traffic; API key in Gemini URL | todo | Untouched. |
+| B3 | Model download integrity/robustness | done | Resume + pinning + SHA-256 + inactivity timeout. All 7 manifest hashes independently verified against HF LFS metadata. **Two sub-items open:** no real free-space probe (needs a plugin/MethodChannel) and downloads still die if Android suspends the app (needs a foreground service). |
+| B4 | Documents & retrieval (PDF, chunking, encrypted search, logs, migrations) | todo | Untouched. Note `searchDocuments()` still LIKE-matches AES-GCM ciphertext, so it cannot work. |
+| B5 | Privacy boundaries (default local, erase-all) | todo | Untouched. `wipe()` still has zero callers. |
 
 ### Phase C — GPU / NPU / CPU (owner's main goal)
 
@@ -77,10 +77,10 @@ audit on trust.
 | C4 | Faster CPU path (runtime CPU variants, thread count) | todo | |
 | C5 | `InferenceBackend` abstraction | todo | |
 | C6 | `lite` / `full` product flavours | todo | |
-| C7 | Adreno OpenCL + Hexagon NPU | todo | |
-| C7b | MediaTek (Mali/Immortalis) policy | todo | |
-| C8 | LiteRT-LM backend (MediaTek NPU etc.) | todo | |
-| C9 | UI honesty (real backend chip) | todo | |
+| C7 | Adreno OpenCL + Hexagon NPU | **blocked — unreachable as built** | `docs/ADR-native-binding.md` inspected the vendored tree: ggml is 0.9.11, new enough to contain `ggml-hexagon` and `ggml-opencl`, but the **published pub package deletes `ggml/src/opencl` and `ggml/src/hexagon`** while leaving the CMake options and `ggml_backend_*_reg()` calls in place. Enabling them is therefore a configure-time failure. C7 cannot be done via the patch-the-pub-package approach — it needs the C5/ADR Option B (owned pinned wrapper) first. |
+| C7b | MediaTek (Mali/Immortalis) policy | todo | Depends on C1/C3 (measure, don't assume). The ADR notes a Mali Vulkan report of ~1.5s CPU vs ~24s Vulkan, but it is old and anecdotal. |
+| C8 | LiteRT-LM backend (MediaTek NPU etc.) | **no-go (documented)** | `docs/SPIKE-litert-lm.md`. `.litertlm`-only (GGUF unusable), a whole second model stack, LLM NPU bundles for only 2 MediaTek SoCs (MT6989/MT6991) needing minSdk 31, and the vendor "12x" figure is prefill-only on a Dimensity 9500. Conditional GO only for a narrow whitelisted NPU feature. |
+| C9 | UI honesty (real backend chip) | todo | Note: `gpu_service.dart` already exists but reports the *requested* layer count, not the actual backend — see C1. |
 
 ### Phase D — honesty & handover
 
@@ -99,6 +99,26 @@ CI runs are cited by run id. Green = all steps succeeded.
 | Date (IST) | Scope | Commit | CI run | Result |
 |---|---|---|---|---|
 | 2026-10-11 | A1 findings verified against source | (no commit) | — | n/a — read-only |
+| 2026-10-11 | A1+A3+A4+B3+docs, first attempt | `56ea925` | `38135144800` | ❌ 1 compile error: `database_helper.dart:504` called `.value` on the sealed base `DecryptResult` (flow promotion failed after a `continue`). 161 tests had passed. |
+| 2026-10-11 | A4 positive type check | `aa4b69f` | `38135507009` | ❌ tests passed, APK build failed: `ToolResult` imported from both `models.dart` and `tool_result.dart`. |
+| 2026-10-11 | A1 removed the dead legacy `ToolResult` | `7c32bc3` | `38135906029` | ✅ **green, 11m24s, 180 tests.** Vulkan + vision + onnxruntime all verified present. |
+
+### What the green run proves
+
+- **180 tests pass** (was 121 before this work; +59).
+- The **version gate works**: `APK versionName='1.2.0' versionCode='42'; expected '1.2.0'` (versionCode from `GITHUB_RUN_NUMBER`).
+- The **signing fail-safe works**: with no keystore secret configured, CI produced
+  `localmind-1.2.0-DEBUGSIGNED-NOT-UPDATABLE.apk` and `apksigner` confirmed
+  `C=US, O=Android, CN=Android Debug`. It is honest about being un-updatable
+  rather than quietly shipping a debug-signed release.
+- **Native verification still passes**: `OK: libllama present`, `libggml`,
+  `libonnxruntime`, `OK: mtmd/CLIP vision code is linked in`,
+  `OK: Vulkan backend shipped`, `OK: Vulkan backend registers itself with ggml`.
+
+### What it does NOT prove
+
+Nothing about runtime behaviour on a device. Every task above still needs the
+`docs/DEVICE_TEST_CHECKLIST.md` pass by a human before it can be called working.
 
 ---
 
