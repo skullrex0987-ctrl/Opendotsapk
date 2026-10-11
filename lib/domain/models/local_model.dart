@@ -157,7 +157,7 @@ class ModelCatalog {
   static const LocalModel qwen35_08b = LocalModel(
     id: 'qwen3.5-0.8b-q4_k_m',
     displayName: 'Qwen3.5 0.8B (vision)',
-    description: 'Sees images natively and chats. One download, no separate ',
+    description: 'Sees images natively and chats. One download, no separate projector to manage.',
     kind: ModelKind.vision, // also appears in llms list via isMultimodal
     fileName: 'Qwen3.5-0.8B-Q4_K_M.gguf',
     url: 'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf',
@@ -269,6 +269,18 @@ class ModelCatalog {
   /// is missing is greyed out and explained, rather than letting the user
   /// download gigabytes that can never load.
   static bool isUsable(LocalModel m) => m.unsupportedReason == null;
+
+  /// Whether [m] may be used as the **chat** brain.
+  ///
+  /// A plain LLM, or a multimodal model whose single GGUF carries the language
+  /// model too (Qwen3.5 is registered with [ModelKind.vision] because vision is
+  /// why it is listed at all — but it is equally a chat model). Checking only
+  /// `kind == ModelKind.llm` is what made selecting Qwen3.5 as the chat model
+  /// silently fall back to an undownloaded default, so the Load button did
+  /// nothing. Kept here, on the pure model layer, so it is unit-testable
+  /// without SharedPreferences or a device.
+  static bool isChatCapable(LocalModel m) =>
+      m.kind == ModelKind.llm || m.isMultimodal;
 
   /// The vision model a fresh install should pick.
   static const LocalModel defaultVision = qwen35_08b;

@@ -1009,15 +1009,20 @@ class ModelSelectorDialog extends ConsumerWidget {
       );
 
       // Vision is optional — a missing projector must not fail the chat model.
+      var visionAttached = false;
       if (ok && vision != null) {
         final projector = await manager.projectorPath(vision);
         if (projector != null) {
-          final visionOk = await llmService.loadVision(projector);
-          if (!visionOk) {
+          visionAttached = await llmService.loadVision(projector);
+          if (!visionAttached) {
             message =
                 '${chat.displayName} loaded, but vision failed to attach.'
                 '${llmService.lastVisionError == null ? '' : ' ${llmService.lastVisionError}'}';
           }
+        } else {
+          message =
+              '${chat.displayName} loaded, but its vision projector file is '
+              'missing. Re-download ${vision.displayName} in Settings -> Models.';
         }
       }
 
@@ -1031,13 +1036,31 @@ class ModelSelectorDialog extends ConsumerWidget {
         }
       }
 
-      if (context.mounted) {
+      // Only advertise a model as "in memory" when it actually got there.
+      // Writing this after a failed load is what made the picker claim a model
+      // was loaded while the runtime held nothing.
+      if (ok && context.mounted) {
         await ref
             .read(settingsProvider.notifier)
             .updateSetting('model_path', await manager.weightPath(chat));
       }
       if (ok && message == 'Failed to load model') {
-        message = '${chat.displayName} ready.';
+        final backend = llmService.activeBackend;
+        message =
+            '${chat.displayName} ready'
+            '${backend == null
+                ? ''
+                : backend == 'cpu'
+                ? ' · CPU'
+                : ' · GPU'}'
+            ' · ${llmService.threads} threads'
+            '${visionAttached ? ' · vision on' : ''}';
+      } else if (!ok && message == 'Failed to load model') {
+        // The native error is the only diagnostic that distinguishes "out of
+        // RAM" from "corrupt file" from "GPU driver refused" — show it.
+        message =
+            '${chat.displayName} failed to load. '
+            '${llmService.lastLoadError ?? 'Free up RAM and try again.'}';
       }
     } catch (e) {
       ok = false;
@@ -1171,8 +1194,16 @@ class _ModelPickerBodyState extends ConsumerState<_ModelPickerBody> {
     }
   }
 
-  Future<void> _choose(LocalModel m) async {
-    switch (m.kind) {
+  /// Write [m] into the selection slot its **section** belongs to.
+  ///
+  /// Dispatching on `m.kind` is the same trap as checking
+  /// `kind == ModelKind.llm` when deciding what is a chat model: Qwen3.5 is
+  /// registered as `vision`, so tapping it under "Chat model" wrote
+  /// `activeVisionId` and left `activeLlmId` pointing elsewhere — the row read
+  /// as chosen while Load bound a different model. The tapped section is the
+  /// authority, not the catalog's label for the model.
+  Future<void> _chooseIn(ModelKind section, LocalModel m) async {
+    switch (section) {
       case ModelKind.llm:
         await _manager.setActiveLlmId(m.id);
         break;
@@ -1197,9 +1228,12 @@ class _ModelPickerBodyState extends ConsumerState<_ModelPickerBody> {
     }
   }
 
-  Widget _row(LocalModel m) {
+  Widget _row(LocalModel m, ModelKind section) {
+    // Read the selection through the section too: with `m.kind` the Qwen3.5
+    // row under "Chat model" showed the *vision* radio, so it could look
+    // unselected while it was the model actually in use.
     final usable = ModelCatalog.isUsable(m);
-    final selected = _selectedId(m.kind) == m.id;
+    final selected = _selectedId(section) == m.id;
 
     return FutureBuilder<bool>(
       future: _manager.isInstalled(m),
@@ -1228,7 +1262,7 @@ class _ModelPickerBodyState extends ConsumerState<_ModelPickerBody> {
               color: usable ? null : Theme.of(context).colorScheme.error,
             ),
           ),
-          onTap: tappable ? () => _choose(m) : null,
+          onTap: tappable ? () => _chooseIn(section, m) : null,
         );
       },
     );
@@ -1286,14 +1320,16 @@ class _ModelPickerBodyState extends ConsumerState<_ModelPickerBody> {
             // Note: Cannot use await in build(), so we check synchronously
             if (_isVisionArchIncompatible(
               vision: _visionId != null ? ModelCatalog.byId(_visionId) : null,
-              chat: _llmId != null
-                  ? ModelCatalog.byId(_llmId)!
-                  : ModelCatalog.defaultLlm,
+              chat: _chatModelForWarning(),
             ))
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Text(
-                  '${ModelCatalog.defaultLlm.displayName} cannot use '
+                  // The chat side must be the *selected* model. Reading the
+                  // catalog default here printed "Qwen2.5 0.5B cannot use …"
+                  // even when Qwen3.5 was selected on both sides, which made
+                  // the warning look like a bug rather than guidance.
+                  '${_chatModelForWarning().displayName} cannot use '
                   '${_visionId != null ? (ModelCatalog.byId(_visionId)?.displayName ?? "vision model") : "vision model"}. '
                   'Vision projectors only work with their matching LLM. '
                   'Select the vision model as the chat model instead.',
@@ -1319,7 +1355,10 @@ class _ModelPickerBodyState extends ConsumerState<_ModelPickerBody> {
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
         child: Text(title, style: Theme.of(context).textTheme.labelLarge),
       ),
-      ..._catalog(kind).map(_row),
+      // The section is passed down explicitly: a model listed under "Chat
+      // model" has to be selectable *as* the chat model even when its catalog
+      // `kind` says otherwise (Qwen3.5, which is registered as `vision`).
+      ..._catalog(kind).map((m) => _row(m, kind)),
     ];
   }
 
@@ -1339,6 +1378,12 @@ class _ModelPickerBodyState extends ConsumerState<_ModelPickerBody> {
     if (chatArch == null) return false;
     return chatArch != vision.llmArch;
   }
+
+  /// The chat model the warning should name: the user's selection when there
+  /// is one (and it resolves), otherwise the catalog default.
+  LocalModel _chatModelForWarning() =>
+      (_llmId != null ? ModelCatalog.byId(_llmId) : null) ??
+      ModelCatalog.defaultLlm;
 }
 
 /// Thinking indicator widget

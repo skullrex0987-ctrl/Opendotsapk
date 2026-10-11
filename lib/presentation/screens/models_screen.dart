@@ -77,8 +77,15 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
     });
   }
 
-  Future<void> _select(LocalModel m, bool installed) async {
-    switch (m.kind) {
+  /// Write [m] into the selection slot its **section** belongs to.
+  ///
+  /// Dispatching on `m.kind` sends Qwen3.5 to `activeVisionId` no matter which
+  /// section it was tapped in, because it is registered as
+  /// [ModelKind.vision] while also being a perfectly good chat model. Tapping
+  /// it under "Chat model" therefore left `activeLlmId` on a different model
+  /// and Load bound the wrong one. The section is the authority.
+  Future<void> _select(LocalModel m, bool installed, ModelKind section) async {
+    switch (section) {
       case ModelKind.llm:
         await _manager.setActiveLlmId(installed ? m.id : null);
         break;
@@ -92,7 +99,7 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
     await _loadSelection();
   }
 
-  Future<void> _download(LocalModel m) async {
+  Future<void> _download(LocalModel m, ModelKind section) async {
     if (_busy.contains(m.id)) return;
     setState(() => _busy.add(m.id));
 
@@ -124,7 +131,7 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
             if (p.done) {
               finish();
               // Selecting straight after a successful download saves a tap.
-              _select(m, true);
+              _select(m, true, section);
               _loadStorage();
               _toast('${m.displayName} installed');
             }
@@ -158,7 +165,9 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
                 'The brain. Pick one — download it, then it is selected '
                 'automatically. Needs ~600 MB RAM.',
           ),
-          ...ModelCatalog.llms.map((m) => _row(m, selectedId: _activeLlm)),
+          ...ModelCatalog.llms.map(
+            (m) => _row(m, selectedId: _activeLlm, section: ModelKind.llm),
+          ),
           const Divider(height: 32),
           const _SectionHeader(
             title: 'Vision model',
@@ -171,6 +180,7 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
             (m) => _row(
               m,
               selectedId: _activeVision,
+              section: ModelKind.vision,
               usable: ModelCatalog.isUsable(m),
             ),
           ),
@@ -182,7 +192,11 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
                 'are stored but never retrieved.',
           ),
           ...ModelCatalog.embeddingModels.map(
-            (m) => _row(m, selectedId: _activeEmbedding),
+            (m) => _row(
+              m,
+              selectedId: _activeEmbedding,
+              section: ModelKind.embedding,
+            ),
           ),
           const Divider(height: 32),
           Padding(
@@ -197,7 +211,12 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
     );
   }
 
-  Widget _row(LocalModel m, {required String? selectedId, bool usable = true}) {
+  Widget _row(
+    LocalModel m, {
+    required String? selectedId,
+    required ModelKind section,
+    bool usable = true,
+  }) {
     return FutureBuilder<bool>(
       future: _manager.isInstalled(m),
       builder: (context, snap) {
@@ -266,14 +285,14 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
                     Icons.cloud_download_outlined,
                     color: usable ? null : Colors.grey,
                   ),
-                  onPressed: usable ? () => _download(m) : null,
+                  onPressed: usable ? () => _download(m, section) : null,
                 ),
           onTap: usable
               ? () async {
                   if (!installed) {
-                    await _download(m);
+                    await _download(m, section);
                   } else {
-                    await _select(m, true);
+                    await _select(m, true, section);
                     if (mounted) setState(() {});
                   }
                 }

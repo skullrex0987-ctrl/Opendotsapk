@@ -1053,10 +1053,29 @@ class ModelManager {
   }
 
   /// The active chat model, falling back to the default when unset/missing.
+  ///
+  /// Two traps this must not fall into, both of which made the Load button
+  /// appear dead:
+  ///
+  /// 1. `kind == ModelKind.llm` alone rejected Qwen3.5, which is registered as
+  ///    `vision` with [LocalModel.isMultimodal]. Selecting it as the chat model
+  ///    therefore *silently* fell back to the default LLM — a model the user
+  ///    had never downloaded — so Load reported "No chat model downloaded yet"
+  ///    no matter how many times it was tapped. Multimodal models are chat
+  ///    models too, so `isMultimodal` counts.
+  /// 2. Falling back to a fixed catalog default is only safe when that default
+  ///    is on disk. Prefer the first *installed* chat model; the catalog
+  ///    default is the last resort, and the caller then reports it honestly
+  ///    rather than pretending the selection took.
   Future<LocalModel> activeLlm() async {
     final id = await activeLlmId();
     final m = ModelCatalog.byId(id);
-    if (m != null && m.kind == ModelKind.llm && await isInstalled(m)) return m;
+    if (m != null && ModelCatalog.isChatCapable(m) && await isInstalled(m)) {
+      return m;
+    }
+    for (final candidate in ModelCatalog.llms) {
+      if (await isInstalled(candidate)) return candidate;
+    }
     return ModelCatalog.defaultLlm;
   }
 

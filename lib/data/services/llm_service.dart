@@ -117,13 +117,23 @@ class LlmService {
     _threads = n.clamp(1, _maxInferenceThreads);
   }
 
+  /// Why the last [loadModel] failed, or null if it has not failed (or the
+  /// most recent attempt succeeded).
+  ///
+  /// The chat screen shows this instead of a bare "Failed to load model", so
+  /// the user gets the actual native error rather than having to guess between
+  /// OOM, a corrupt file and a broken GPU driver.
+  String? get lastLoadError => _lastLoadError;
+  String? _lastLoadError;
+
   /// Load a GGUF chat model. Returns false (and reports via [onError]) on
   /// failure rather than throwing, so the UI can show a message.
   ///
   /// [gpuLayers] is how many transformer layers to offload. The value is
-  /// advisory: llama.cpp silently falls back to CPU when the backend cannot be
-  /// initialised, so an offload request on a device with no usable GPU costs
-  /// nothing but a log line. [GpuCapability] decides what to pass.
+  /// requested rather than guaranteed: when the native side refuses the GPU
+  /// path this method retries once at zero layers on CPU before it reports
+  /// failure, because a device with a broken Vulkan stack can still run the
+  /// model — just slower. [GpuCapability] decides what to ask for.
   ///
   /// On success, [activeBackend] is updated to reflect what actually ran.
   Future<bool> loadModel(
@@ -134,43 +144,40 @@ class LlmService {
     try {
       await release();
       _nCtx = nCtx;
-      _gpuLayers = gpuLayers;
 
-      // Wrap in a sentinel try-catch: if the native layer throws during init,
-      // we must ensure the service stays in a clean state rather than being
-      // left half-initialised with _isLoaded = true but no working backend.
-      bool ok = false;
-      try {
-        await _llm.initModel(
-          modelPath,
-          nCtx: nCtx,
-          nThreads: await cpuCores(),
-          nGpuLayers: gpuLayers,
-        );
-        ok = _llm.isInitialized;
-      } catch (e) {
-        onError?.call('Failed to load model: $e');
+      var layers = gpuLayers;
+      var error = await _initOnce(modelPath, nCtx, layers);
+
+      // A GPU offload the device refuses (no usable Vulkan device, driver
+      // quirk, thermal/RAM pressure) otherwise surfaces as "the model will not
+      // load, ever" — which is exactly what a user sees as a dead Load button.
+      // llama.cpp on CPU loads the same file fine, so retry once at zero
+      // layers before reporting failure, and remember which one worked.
+      if (error != null && layers > 0) {
+        Log.w('[LlmService] GPU init failed ($error) — retrying on CPU');
+        await release();
+        layers = 0;
+        error = await _initOnce(modelPath, nCtx, 0);
+      }
+
+      if (error != null) {
+        _lastLoadError = error;
+        onError?.call(error);
         _isLoaded = false;
         _modelPath = null;
         _activeBackend = null;
+        _gpuLayers = 0;
         return false;
       }
 
-      if (!ok) {
-        onError?.call('Native layer rejected the model (too large for RAM?)');
-        _isLoaded = false;
-        _modelPath = null;
-        _activeBackend = null;
-        return false;
-      }
-
-      // Determine which backend actually ran. If gpuLayers > 0 and init
-      // succeeded, assume Vulkan was accepted; otherwise CPU.
-      _activeBackend = gpuLayers > 0 ? 'vulkan' : 'cpu';
+      _gpuLayers = layers;
+      // Reported from the layers that were actually accepted, not requested.
+      _activeBackend = layers > 0 ? 'vulkan' : 'cpu';
       _modelPath = modelPath;
       _isLoaded = true;
+      _lastLoadError = null;
       debugPrint(
-        '[LlmService] loaded $modelPath (ctx=$nCtx, gpuLayers=$gpuLayers, threads=${_threads}, backend=$_activeBackend)',
+        '[LlmService] loaded $modelPath (ctx=$nCtx, gpuLayers=$layers, threads=${_threads}, backend=$_activeBackend)',
       );
       return true;
     } catch (e) {
@@ -178,7 +185,28 @@ class LlmService {
       _isLoaded = false;
       _modelPath = null;
       _activeBackend = null;
+      _gpuLayers = 0;
       return false;
+    }
+  }
+
+  /// One native init attempt. Returns null on success, or the message to show
+  /// the user on failure. Never throws and never calls [onError] itself: a
+  /// failed *first* attempt is recoverable by the CPU retry in [loadModel], and
+  /// reporting an error the app then recovers from would be a false alarm.
+  Future<String?> _initOnce(String path, int nCtx, int layers) async {
+    try {
+      await _llm.initModel(
+        path,
+        nCtx: nCtx,
+        nThreads: await cpuCores(),
+        nGpuLayers: layers,
+      );
+      if (_llm.isInitialized) return null;
+      return 'Native layer rejected the model (too large for RAM?)';
+    } catch (e) {
+      Log.e('[LlmService] init failed (layers=$layers): $e');
+      return 'Failed to load model: $e';
     }
   }
 
