@@ -63,10 +63,14 @@ class ChatComposer extends StatelessWidget {
       ),
       child: SafeArea(
         top: false,
-        child: ValueListenableBuilder<String>(
-          valueListenable: controller,
-          builder: (context, value, _) {
-            final hasText = value.trim().isNotEmpty;
+        // ListenableBuilder rather than ValueListenableBuilder<String>: a
+        // TextEditingController notifies as a whole, it is not a
+        // ValueListenable<String>, and the only thing this builder needs is
+        // whether the field is blank — read straight off `controller.text`.
+        child: ListenableBuilder(
+          listenable: controller,
+          builder: (context, _) {
+            final hasText = controller.text.trim().isNotEmpty;
             // Send is actionable for text; during generation the same slot
             // becomes Stop, which is always actionable.
             final canSend = hasText && !isGenerating;
@@ -177,7 +181,13 @@ class _SendStopButton extends StatelessWidget {
 
   final bool isGenerating;
   final bool enabled;
-  final VoidCallback onSend;
+
+  /// Same signature as [ChatComposer.onSend]: the keyboard's submit action
+  /// carries the committed string, the send button passes null so the screen
+  /// falls back to the controller's own text. Typed as VoidCallback this did
+  /// not compile at either end — the caller passes a `String?` and this file
+  /// called it with `null`.
+  final ValueChanged<String?> onSend;
   final VoidCallback onStop;
 
   @override

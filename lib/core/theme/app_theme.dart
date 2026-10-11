@@ -315,8 +315,10 @@ class AppTheme {
       // exist.
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
+          // Android only: the app locks to portrait and targets Android, and
+          // CupertinoPageTransitionsBuilder is not in material's export
+          // (it lives in cupertino.dart) — naming it here does not compile.
           TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
-          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
         },
       ),
     );

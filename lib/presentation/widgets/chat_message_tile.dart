@@ -76,7 +76,7 @@ class ChatMessageTile extends StatelessWidget {
                 MarkdownBody(
                   data: message.content,
                   selectable: true,
-                  styleSheet: MarkdownStyle.fromTheme(theme),
+                  styleSheet: MarkdownStyleSheet.fromTheme(theme),
                 ),
                 const SizedBox(height: 6),
                 Align(
