@@ -2,7 +2,7 @@
 
 A fully local, privacy-first AI agent for Android that runs entirely on-device.
 
-**Download the APK:** [Releases → v1.3.0](https://github.com/skullrex0987-ctrl/Opendotsapk/releases/tag/v1.3.0)
+**Download the APK:** [Releases → v1.4.0](https://github.com/skullrex0987-ctrl/Opendotsapk/releases/tag/v1.4.0)
 
 ## Status
 

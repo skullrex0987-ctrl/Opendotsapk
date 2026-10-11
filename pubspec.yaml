@@ -6,7 +6,7 @@ publish_to: 'none'
 # a drift here is caught before anything ships. The build number is only a
 # local default — CI overrides it with the run number so versionCode is
 # monotonic across releases.
-version: 1.3.0+1
+version: 1.4.0+2
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
