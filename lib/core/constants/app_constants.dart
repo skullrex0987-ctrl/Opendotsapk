@@ -17,7 +17,7 @@ class AppConstants {
   /// is what [resolvedVersion] returns when package_info_plus is unavailable
   /// (unit tests, a platform with no implementation), so the UI still shows a
   /// sane string instead of nothing.
-  static const String appVersion = '1.2.0';
+  static const String appVersion = '1.3.0';
 
   /// Version of the build actually installed, e.g. `1.2.0` or `1.2.0+42`.
   ///
