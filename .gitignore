@@ -38,3 +38,7 @@ assets/models/*.onnx
 .env
 *.env
 key.properties
+
+# Python bytecode from the CI helper scripts
+__pycache__/
+*.pyc
