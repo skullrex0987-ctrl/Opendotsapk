@@ -450,7 +450,6 @@ class LlmService {
   String? get modelPath => _modelPath;
   int get contextSize => _nCtx;
   int get gpuLayers => _gpuLayers;
-  int get threads => _threads;
   bool get isVisionLoaded => _isVisionLoaded;
   String? get visionProjectorPath => _visionProjectorPath;
   /// Which backend is currently active: 'vulkan', 'cpu', or null before any load.

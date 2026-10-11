@@ -1279,13 +1279,16 @@ class _ModelPickerBodyState extends ConsumerState<_ModelPickerBody> {
             // Architecture mismatch warning: Qwen3.5 vision requires its
             // matching LLM. SmolLM2 (phi2) + Qwen3.5 projector always fails
             // at the native layer because the projector expects qwen35 context.
-            if (_isVisionArchIncompatible(vision: vision, chat: chat))
+            if (_isVisionArchIncompatible(
+                vision: await _manager.activeVision(),
+                chat: await _manager.activeLlm()))
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Text(
-                  '${chat.displayName} cannot use ${vision.displayName}. '
+                  '${(await _manager.activeLlm()).displayName} cannot use '
+                  '${(await _manager.activeVision())?.displayName ?? "vision model"}. '
                   'Vision projectors only work with their matching LLM. '
-                  'Select ${vision.displayName} as the chat model instead.',
+                  'Select the vision model as the chat model instead.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context).colorScheme.error,
                       ),
@@ -1324,10 +1327,17 @@ class _ModelPickerBodyState extends ConsumerState<_ModelPickerBody> {
     required LocalModel chat,
   }) {
     if (vision == null || vision.llmArch == null) return false;
-    if (chat.id == vision.id) return false; // same model, compatible by definition
+    if (chat.id == vision.id) return false; // same model, compatible
     final chatArch = chat.llmArch;
-    if (chatArch == null) return false; // unknown arch — be permissive
+    if (chatArch == null) return false;
     return chatArch != vision.llmArch;
+  }
+
+  /// Async helper to get the active LLM and vision models for the mismatch check.
+  Future<({LocalModel chat, LocalModel? vision})> _getActiveModels() async {
+    final chat = await _manager.activeLlm();
+    final vision = await _manager.activeVision();
+    return (chat: chat, vision: vision);
   }
 }
 
