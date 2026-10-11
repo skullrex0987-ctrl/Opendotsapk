@@ -65,6 +65,12 @@ class DatabaseHelper {
   static const String tableDocuments = 'documents';
   static const String tableChunks = 'chunks';
 
+  /// Substituted for an encrypted column that could not be decrypted with the
+  /// current key. Non-empty on purpose: handing back `''` for an unreadable row
+  /// both hides the data loss and, if the user edits and saves that row, would
+  /// overwrite the still-intact ciphertext with an empty string.
+  static const String unreadablePlaceholder = '[unreadable]';
+
   /// Cached corpus statistics for BM25. Recomputed lazily and invalidated on
   /// write, because a stale IDF makes keyword ranking quietly wrong.
   _CorpusStats? _corpus;
@@ -488,7 +494,14 @@ class DatabaseHelper {
         final dim = (r['dim'] as int?) ?? vector.length;
         if (vector.length != dim) continue;
 
-        final text = await CryptoBox.instance.decrypt('${r['text']}');
+        final decoded = await CryptoBox.instance.decryptChecked('${r['text']}');
+        if (decoded is DecryptFailure) {
+          // A row we cannot read cannot be scored; indexing the placeholder
+          // would make it match queries it has nothing to do with.
+          Log.w('skipping unreadable memory row: ${decoded.reason}');
+          continue;
+        }
+        final text = decoded.value;
         final tokens = TextUtils.tokenize(text);
 
         out.add(_Candidate(
@@ -688,8 +701,8 @@ class DatabaseHelper {
     final out = <Map<String, dynamic>>[];
     for (final r in rows) {
       final m = Map<String, dynamic>.from(r);
-      m['params'] = await CryptoBox.instance.decrypt('${r['params'] ?? ''}');
-      m['result'] = await CryptoBox.instance.decrypt('${r['result'] ?? ''}');
+      m['params'] = await _decryptTextColumn('${r['params'] ?? ''}');
+      m['result'] = await _decryptTextColumn('${r['result'] ?? ''}');
       out.add(m);
     }
     return out;
@@ -793,9 +806,32 @@ class DatabaseHelper {
     if (!decrypt) return out;
     final raw = row[column];
     if (raw is String && CryptoBox.isEncrypted(raw)) {
-      out[column] = await CryptoBox.instance.decrypt(raw);
+      final result = await CryptoBox.instance.decryptChecked(raw);
+      out[column] = switch (result) {
+        DecryptedValue(:final value) => value,
+        DecryptFailure(:final reason) => _markUnreadable(column, reason),
+      };
     }
     return out;
+  }
+
+  /// Log an unreadable encrypted column and return the placeholder for it, so a
+  /// decrypt failure is visible in diagnostics instead of silently reading as a
+  /// blank field.
+  static String _markUnreadable(String column, DecryptFailureReason reason) {
+    Log.e('unreadable encrypted column "$column": $reason');
+    return unreadablePlaceholder;
+  }
+
+  /// Decrypt a nullable TEXT column (activity log params/result). An unreadable
+  /// value becomes [unreadablePlaceholder] rather than an empty string, which
+  /// is what distinguishes it from a genuinely empty field.
+  static Future<String> _decryptTextColumn(String raw) async {
+    final result = await CryptoBox.instance.decryptChecked(raw);
+    return switch (result) {
+      DecryptedValue(:final value) => value,
+      DecryptFailure(:final reason) => _markUnreadable('text', reason),
+    };
   }
 
   /// Debug helper: dump a table as JSON. Never used in the UI path.

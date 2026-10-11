@@ -20,6 +20,16 @@
 /// Values without the `enc:v1:` prefix are treated as plaintext. That keeps
 /// pre-existing rows readable and makes encryption opt-in per record, so a
 /// partial migration can never make the database unreadable.
+///
+/// ## Reading a failure
+///
+/// [decrypt] historically returned an empty string for *both* "the plaintext
+/// was empty" and "the ciphertext could not be read". Those are not the same
+/// fact, and conflating them lets an unreadable row masquerade as empty
+/// content — which, if the user then edits and saves, overwrites the intact
+/// ciphertext. [decryptChecked] returns a typed result so callers can tell the
+/// two apart. [decrypt] is retained as a compatibility shim that maps every
+/// failure to `''`; the wire format and its output are unchanged.
 library;
 
 import 'dart:convert';
@@ -29,6 +39,44 @@ import 'dart:typed_data';
 import 'package:cryptography/cryptography.dart';
 
 import '../utils/log.dart';
+
+/// Why a [DecryptFailure] happened.
+enum DecryptFailureReason {
+  /// The value carried the `enc:v1:` prefix but no key is loaded — the key was
+  /// never installed, or the box is in degraded/plaintext mode. The data is
+  /// intact; it just cannot be read in this session.
+  noKey,
+
+  /// The value is not valid base64, or is too short to hold a nonce and a MAC.
+  /// The stored bytes are structurally wrong.
+  malformed,
+
+  /// The bytes decoded but the AES-GCM tag did not verify: the key is wrong,
+  /// or the ciphertext was tampered with or corrupted. The plaintext is
+  /// unrecoverable.
+  authenticationFailed,
+}
+
+/// The outcome of [CryptoBox.decryptChecked].
+sealed class DecryptResult {
+  const DecryptResult();
+}
+
+/// The value was readable. For plaintext input and the empty string this is a
+/// successful, non-empty-in-meaning result — an empty [value] means the stored
+/// plaintext was empty, not that decryption failed.
+final class DecryptedValue extends DecryptResult {
+  final String value;
+  const DecryptedValue(this.value);
+}
+
+/// The value could not be read. [reason] says which kind of failure it was, and
+/// [cause] carries the underlying error where one exists.
+final class DecryptFailure extends DecryptResult {
+  final DecryptFailureReason reason;
+  final Object? cause;
+  const DecryptFailure(this.reason, [this.cause]);
+}
 
 class CryptoBox {
   CryptoBox._();
@@ -64,6 +112,9 @@ class CryptoBox {
 
   /// Turn encryption off. Used when the platform keystore is unavailable so the
   /// app degrades to plaintext instead of refusing to start.
+  ///
+  /// Note this only stops *new* writes from being encrypted; it never rewrites
+  /// existing rows, so turning it on again later can still read what is there.
   void disable() {
     _key = null;
     _disabled = true;
@@ -104,37 +155,60 @@ class CryptoBox {
     }
   }
 
-  /// Decrypt a value produced by [encrypt]. Plaintext input passes through.
+  /// Decrypt [value] and report *whether it was readable*, distinct from
+  /// whether the plaintext was empty.
   ///
-  /// Returns an empty string and logs on failure — a corrupt row must not crash
-  /// a list view that is rendering hundreds of them.
-  Future<String> decrypt(String value) async {
+  /// Never throws: a corrupt row must not crash a list view that is rendering
+  /// hundreds of them, so every failure is returned as a [DecryptFailure].
+  Future<DecryptResult> decryptChecked(String value) async {
+    if (!value.startsWith(_prefix)) return DecryptedValue(value);
+
     final key = _key;
-    if (!value.startsWith(_prefix)) return value;
     if (key == null || _disabled) {
-      Log.w('CryptoBox.decrypt: encrypted value found but no key loaded');
-      return '';
+      Log.w('CryptoBox.decryptChecked: encrypted value found but no key loaded');
+      return const DecryptFailure(DecryptFailureReason.noKey);
     }
 
+    Uint8List raw;
     try {
-      final raw = base64Decode(value.substring(_prefix.length));
-      if (raw.length < 12 + 16) {
-        Log.w('CryptoBox.decrypt: ciphertext too short');
-        return '';
-      }
-      final nonce = raw.sublist(0, 12);
-      final mac = Mac(raw.sublist(raw.length - 16));
-      final cipherText = raw.sublist(12, raw.length - 16);
+      raw = base64Decode(value.substring(_prefix.length));
+    } catch (e) {
+      Log.w('CryptoBox.decryptChecked: malformed ciphertext: $e');
+      return DecryptFailure(DecryptFailureReason.malformed, e);
+    }
+    if (raw.length < 12 + 16) {
+      Log.w('CryptoBox.decryptChecked: ciphertext too short');
+      return const DecryptFailure(DecryptFailureReason.malformed);
+    }
 
+    final nonce = raw.sublist(0, 12);
+    final mac = Mac(raw.sublist(raw.length - 16));
+    final cipherText = raw.sublist(12, raw.length - 16);
+
+    try {
       final clear = await _algorithm.decrypt(
         SecretBox(cipherText, nonce: nonce, mac: mac),
         secretKey: key,
       );
-      return utf8.decode(clear);
+      return DecryptedValue(utf8.decode(clear));
     } catch (e) {
-      Log.w('CryptoBox.decrypt failed: $e');
-      return '';
+      // Wrong key, tampered bytes, or a truncated row all land here. Returning
+      // a typed failure keeps "unreadable" distinct from "empty".
+      Log.w('CryptoBox.decryptChecked: authentication failed: $e');
+      return DecryptFailure(DecryptFailureReason.authenticationFailed, e);
     }
+  }
+
+  /// Decrypt a value produced by [encrypt]. Plaintext input passes through, and
+  /// an empty plaintext stays an empty string.
+  ///
+  /// This is the compatibility shim: every failure collapses to `''`, which is
+  /// what the rest of the app (and the pinned tests) expect. Callers that must
+  /// tell an unreadable row apart from an empty one — the database layer — use
+  /// [decryptChecked] instead.
+  Future<String> decrypt(String value) async {
+    final result = await decryptChecked(value);
+    return result is DecryptedValue ? result.value : '';
   }
 
   /// True when [value] looks like it was encrypted by this class.

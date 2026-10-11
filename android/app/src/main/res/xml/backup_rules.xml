@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Full-backup content rules for Android 11 (API 30) and below.
+
+  Message, note, memory and document content is encrypted at rest with a key
+  held in the Android Keystore. That key is device-bound and is never included
+  in a cloud backup or a device-to-device transfer, so a backup that carries the
+  encrypted rows carries nothing able to decrypt them: the user restores a
+  database full of unreadable ciphertext, sees empty chats and memories, and may
+  conclude the data is gone. Excluding both the database and the secure prefs
+  stops the app from shipping undecryptable ciphertext (and wrapped secrets)
+  off-device in the first place.
+
+  Only <exclude> is used, so everything else the app owns is still backed up.
+-->
+<full-backup-content>
+    <!-- localmind.db (plus its -journal/-wal sidecars): every encrypted
+         message, note, memory and document chunk lives here. -->
+    <exclude domain="database" path="." />
+
+    <!-- shared_prefs: the flutter_secure_storage entries that wrap the app's
+         secrets, plus any other preferences. -->
+    <exclude domain="sharedpref" path="." />
+</full-backup-content>
