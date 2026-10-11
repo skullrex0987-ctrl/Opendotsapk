@@ -2,6 +2,7 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -12,8 +13,12 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../providers/providers.dart';
-import '../widgets/message_bubble.dart';
-import '../../core/constants/app_constants.dart';
+import '../widgets/chat_composer.dart';
+import '../widgets/chat_empty_state.dart';
+import '../widgets/chat_message_tile.dart';
+import '../widgets/chat_status_chip.dart';
+import '../../core/theme/app_theme.dart';
+import '../../core/theme/motion.dart';
 import '../../core/utils/log.dart';
 import '../../core/utils/text_utils.dart';
 import '../../core/utils/turn_builder.dart';
@@ -37,6 +42,9 @@ class ChatScreen extends ConsumerStatefulWidget {
 class _ChatScreenState extends ConsumerState<ChatScreen> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+
+  /// Held so a suggestion chip can fill the field and raise the keyboard.
+  final FocusNode _composerFocus = FocusNode();
   final Uuid _uuid = const Uuid();
   bool _isThinking = false;
   String _currentResponse = '';
@@ -69,11 +77,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   String _pendingTokens = '';
   Timer? _flushTimer;
 
+  /// When the in-flight reply started, so its bubble shows a stable clock
+  /// instead of one that creeps forward with every rebuild.
+  int _streamStartMs = 0;
+
   @override
   void dispose() {
     _flushTimer?.cancel();
     _cloudSub?.cancel();
     _controller.dispose();
+    _composerFocus.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -82,55 +95,54 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   Widget build(BuildContext context) {
     final messages = ref.watch(chatMessagesProvider);
     final settings = ref.watch(settingsProvider);
+    final modelPath = settings['model_path'] as String?;
+    final hasModel = modelPath != null && modelPath.trim().isNotEmpty;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('LocalMind'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.clear_all),
-            onPressed: _clearChat,
-            tooltip: 'Clear Chat',
-          ),
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              if (value == 'model') _showModelSelector();
-              if (value == 'export') _exportChat();
-            },
-            itemBuilder: (context) => const [
-              PopupMenuItem(value: 'model', child: Text('Select Model')),
-              PopupMenuItem(value: 'export', child: Text('Export chat')),
-            ],
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(_modelStatusIcon(settings), color: Colors.grey[400]),
-                const SizedBox(width: 4),
-                Text(
-                  _modelStatusLabel(settings),
-                  style: TextStyle(color: Colors.grey[400]),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
       body: Column(
         children: [
+          _ChatHeader(
+            modelPath: modelPath,
+            isGenerating: _isThinking,
+            onManageModels: _showModelSelector,
+            onClear: _clearChat,
+            onExport: _exportChat,
+          ),
+
           // Messages list
           Expanded(
-            child: ListView.builder(
-              controller: _scrollController,
-              padding: const EdgeInsets.all(16),
-              itemCount: messages.length + (_isThinking ? 1 : 0),
-              itemBuilder: (context, index) {
-                if (index == messages.length && _isThinking) {
-                  return const ThinkingBubble();
-                }
-                final message = messages[messages.length - 1 - index];
-                return MessageBubble(message: message);
-              },
-            ),
+            child: messages.isEmpty
+                ? ChatEmptyState(
+                    modelLoaded: hasModel,
+                    onManageModels: _showModelSelector,
+                    onSuggestion: _fillComposer,
+                  )
+                : ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                    itemCount: messages.length + (_isThinking ? 1 : 0),
+                    itemBuilder: (context, index) {
+                      if (index == messages.length && _isThinking) {
+                        return const ThinkingBubble();
+                      }
+                      // Reversed on purpose: the newest message belongs at the
+                      // top, and with the composer pinned to the bottom this
+                      // is what makes "scroll to the latest" a no-op instead
+                      // of a jump to the far end.
+                      final message = messages[messages.length - 1 - index];
+                      return FadeSlideIn(
+                        // Stagger capped hard: the index runs newest-first, so
+                        // without a cap the fifth item of a long transcript
+                        // would still be waiting 500 ms and the hundredth
+                        // five seconds. Five steps covers every message that
+                        // is actually on screen at insertion time.
+                        delay: Duration(
+                          milliseconds: (index > 5 ? 5 : index) * 50,
+                        ),
+                        child: ChatMessageTile(message: message),
+                      );
+                    },
+                  ),
           ),
 
           // Attachment previews
@@ -140,78 +152,33 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           // Route badge: say plainly where the last turn ran.
           if (_lastRoute != null) _buildRouteBadge(),
 
-          // Input area
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 4,
-                  offset: const Offset(0, -2),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.add_photo_alternate_outlined),
-                  onPressed: _pickImage,
-                  tooltip: 'Attach an image (needs a vision model)',
-                  color: Colors.grey[400],
-                ),
-                IconButton(
-                  icon: const Icon(Icons.attach_file),
-                  onPressed: _pickDocument,
-                  tooltip:
-                      'Attach a document: ${DocumentService.supportedSummary}',
-                  color: Colors.grey[400],
-                ),
-                IconButton(
-                  icon: const Icon(Icons.mic),
-                  onPressed: _startVoiceInput,
-                  color: Colors.grey[400],
-                ),
-                Expanded(
-                  child: TextField(
-                    controller: _controller,
-                    decoration: InputDecoration(
-                      hintText: 'Type a message...',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 8,
-                      ),
-                    ),
-                    maxLines: 4,
-                    minLines: 1,
-                    textInputAction: TextInputAction.send,
-                    onSubmitted: _sendMessage,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                // While a reply streams this becomes Stop. It used to be merely
-                // disabled, so there was no way to cancel one — the only cancel
-                // icon in the composer removed an attached image.
-                IconButton(
-                  icon: Icon(_isThinking ? Icons.stop_circle : Icons.send),
-                  tooltip: _isThinking ? 'Stop generating' : 'Send',
-                  onPressed: _isThinking
-                      ? () => _stopGeneration()
-                      : () => _sendMessage(),
-                  color: _isThinking
-                      ? Theme.of(context).colorScheme.error
-                      : AppConstants.primaryColor,
-                ),
-              ],
-            ),
+          ChatComposer(
+            controller: _controller,
+            focusNode: _composerFocus,
+            isGenerating: _isThinking,
+            onSend: _sendMessage,
+            onStop: _stopGeneration,
+            onAttachImage: _pickImage,
+            onAttachDocument: _pickDocument,
+            onVoice: _startVoiceInput,
+            imageTooltip: 'Attach an image (needs a vision model)',
+            documentTooltip:
+                'Attach a document: ${DocumentService.supportedSummary}',
           ),
         ],
       ),
     );
+  }
+
+  /// Put a suggested prompt into the composer without sending it.
+  ///
+  /// Tapping a suggestion must not fire a turn the user has not read yet, so
+  /// this only fills the field and raises the keyboard.
+  void _fillComposer(String prompt) {
+    _composerFocus.requestFocus();
+    _controller
+      ..text = prompt
+      ..selection = TextSelection.collapsed(offset: prompt.length);
   }
 
   /// Badge under the composer showing the router's decision.
@@ -219,27 +186,29 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final isCloud =
         _lastRoute!.toLowerCase().contains('cloud') ||
         _lastRoute!.toLowerCase().contains('sent to');
+    // Amber for anything that left the device, green for anything that did
+    // not. The distinction is the entire point of the badge, so the colours
+    // are semantic tokens rather than a pair of arbitrary Material hues.
+    final tint = isCloud ? AppColors.warning : AppColors.success;
+
     return Container(
       width: double.infinity,
-      color: isCloud
-          ? Colors.orange.withOpacity(0.15)
-          : Colors.green.withOpacity(0.15),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      color: tint.withValues(alpha: 0.12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
       child: Row(
         children: [
           Icon(
             isCloud ? Icons.cloud_outlined : Icons.phone_android,
             size: 14,
-            color: isCloud ? Colors.orange[300] : Colors.green[300],
+            color: tint,
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 8),
           Expanded(
             child: Text(
               _lastRoute!,
-              style: TextStyle(
-                fontSize: 11,
-                color: isCloud ? Colors.orange[200] : Colors.green[200],
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.labelSmall?.copyWith(color: tint),
             ),
           ),
         ],
@@ -248,9 +217,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   Widget _buildAttachmentStrip() {
+    final scheme = Theme.of(context).colorScheme;
+
     return Container(
       height: 76,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      color: AppColors.surface,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: ListView(
         scrollDirection: Axis.horizontal,
         children: [
@@ -258,12 +230,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             Stack(
               children: [
                 Container(
-                  margin: const EdgeInsets.only(right: 8),
+                  margin: const EdgeInsets.only(right: 10),
                   width: 60,
                   height: 60,
                   decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.grey[700]!),
+                    borderRadius: BorderRadius.circular(
+                      AppTheme.radiusMedium,
+                    ),
+                    border: Border.all(
+                      color: scheme.outlineVariant.withValues(alpha: 0.5),
+                    ),
                     image: DecorationImage(
                       image: FileImage(File(path)),
                       fit: BoxFit.cover,
@@ -271,11 +247,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   ),
                 ),
                 Positioned(
-                  right: 4,
-                  top: -4,
+                  right: 6,
+                  top: -6,
                   child: IconButton(
-                    iconSize: 16,
-                    icon: const Icon(Icons.cancel, color: Colors.redAccent),
+                    iconSize: 15,
+                    splashRadius: 14,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 22,
+                      height: 22,
+                    ),
+                    tooltip: 'Remove this image',
+                    icon: const Icon(Icons.cancel, color: AppColors.danger),
                     onPressed: () =>
                         setState(() => _attachedImages.remove(path)),
                   ),
@@ -283,28 +266,24 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               ],
             ),
           for (final doc in _attachedDocs)
-            Chip(
-              avatar: const Icon(Icons.description, size: 16),
-              label: Text(
-                '${doc.name} (${doc.chunks.length})',
-                style: const TextStyle(fontSize: 11),
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Chip(
+                avatar: const Icon(
+                  Icons.description,
+                  size: 16,
+                  color: AppColors.accent,
+                ),
+                label: Text(
+                  '${doc.name} (${doc.chunks.length})',
+                  style: Theme.of(context).textTheme.labelMedium,
+                ),
+                onDeleted: () => setState(() => _attachedDocs.remove(doc)),
               ),
-              onDeleted: () => setState(() => _attachedDocs.remove(doc)),
             ),
         ],
       ),
     );
-  }
-
-  IconData _modelStatusIcon(Map<String, dynamic> settings) {
-    final loaded = settings['model_path'] != null;
-    return loaded ? Icons.check_circle : Icons.cloud_download;
-  }
-
-  String _modelStatusLabel(Map<String, dynamic> settings) {
-    if (settings['model_path'] != null) return 'Loaded';
-    if (ref.read(llmServiceProvider).isLoaded) return 'Loaded';
-    return 'No Model';
   }
 
   // -------------------------------------------------------------- attachments
@@ -890,6 +869,124 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 }
 
+/// Short display name for the model in memory, taken from its file name.
+///
+/// The previous chip said only "Loaded", which meant the user had to open
+/// Model Management to find out *which* model was live — the one piece of
+/// information that decides whether the answers are any good.
+String _modelDisplayName(String path) {
+  final file = path.split('/').last;
+  final stem = file.endsWith('.gguf')
+      ? file.substring(0, file.length - 5)
+      : file;
+  // File names run long ("Qwen2.5-0.5B-Instruct-Q4_K_M"); the chip has room for
+  // roughly this much before it starts pushing the header actions off-screen.
+  if (stem.length <= 22) return stem;
+  return '${stem.substring(0, 21)}…';
+}
+
+/// The header above the transcript.
+///
+/// App identity on the left, the live model chip on the right. The chip leads to
+/// the same Model Management sheet the old overflow menu's "Select Model" item
+/// did, promoted to a single tap because "what am I running" and "change what
+/// I'm running" are the same question asked constantly.
+class _ChatHeader extends StatelessWidget {
+  const _ChatHeader({
+    required this.modelPath,
+    required this.isGenerating,
+    required this.onManageModels,
+    required this.onClear,
+    required this.onExport,
+  });
+
+  final String? modelPath;
+  final bool isGenerating;
+  final VoidCallback onManageModels;
+  final VoidCallback onClear;
+  final VoidCallback onExport;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final path = modelPath;
+    final loaded = path != null && path.trim().isNotEmpty;
+
+    return Container(
+      color: AppColors.background,
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+          child: Row(
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: AppColors.brand.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+                ),
+                child: const Icon(
+                  Icons.psychology,
+                  size: 18,
+                  color: AppColors.brand,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'LocalMind',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const Spacer(),
+              ChatStatusChip(
+                loaded: loaded,
+                label: loaded
+                    ? _modelDisplayName(path)
+                    : (isGenerating ? 'Working…' : 'No model loaded'),
+                onTap: onManageModels,
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                icon: const Icon(Icons.clear_all),
+                onPressed: onClear,
+                tooltip: 'Clear Chat',
+                iconSize: 20,
+                splashRadius: 20,
+                constraints: const BoxConstraints.tightFor(
+                  width: 38,
+                  height: 38,
+                ),
+                padding: EdgeInsets.zero,
+                color: scheme.onSurfaceVariant,
+              ),
+              // Kept as an overflow so Export stays reachable on narrow
+              // phones without displacing the status chip.
+              PopupMenuButton<String>(
+                onSelected: (value) {
+                  if (value == 'model') onManageModels();
+                  if (value == 'export') onExport();
+                },
+                itemBuilder: (context) => const [
+                  PopupMenuItem(value: 'model', child: Text('Select Model')),
+                  PopupMenuItem(value: 'export', child: Text('Export chat')),
+                ],
+                tooltip: 'More',
+                iconSize: 20,
+                icon: Icon(Icons.more_vert, color: scheme.onSurfaceVariant),
+                padding: EdgeInsets.zero,
+                // No `constraints` here on purpose: on PopupMenuButton that
+                // parameter constrains the dropdown menu, not the button, and
+                // a tight width would collapse the menu itself.
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Model Management sheet.
 ///
 /// Shows what is **actually in memory** next to what is **selected**. Those two
@@ -1386,37 +1483,144 @@ class _ModelPickerBodyState extends ConsumerState<_ModelPickerBody> {
       ModelCatalog.defaultLlm;
 }
 
-/// Thinking indicator widget
-class ThinkingBubble extends StatelessWidget {
+/// Thinking indicator shown while the model is generating.
+///
+/// Kept as a public class because it is part of the screen's vocabulary, but
+/// rebuilt around the theme: the old grey spinner on a grey box was the only
+/// un-themed element left on the transcript. It also now matches the rest of
+/// the assistant's presentation — same bubble colour, same avatar — so the
+/// reply does not appear to jump when it materialises.
+class ThinkingBubble extends StatefulWidget {
   const ThinkingBubble({super.key});
 
   @override
+  State<ThinkingBubble> createState() => _ThinkingBubbleState();
+}
+
+class _ThinkingBubbleState extends State<ThinkingBubble>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    // One full three-dot cycle. Short enough to feel like the model is
+    // thinking rather than the app is hung, long enough for each dot's pulse
+    // to be legible.
+    duration: const Duration(milliseconds: 1100),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
     return Align(
       alignment: Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.grey[800],
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.grey),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: AppColors.accent.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: AppColors.accent.withValues(alpha: 0.28),
               ),
             ),
-            const SizedBox(width: 12),
-            Text('Thinking...', style: TextStyle(color: Colors.grey[400])),
-          ],
-        ),
+            child: const Icon(
+              Icons.psychology,
+              size: 16,
+              color: AppColors.accent,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: AppColors.aiBubble,
+              borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
+              border: Border.all(
+                color: scheme.outlineVariant.withValues(alpha: 0.45),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _PulsingDots(animation: _controller),
+                const SizedBox(width: 12),
+                Text(
+                  'Thinking...',
+                  style: text.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
+    );
+  }
+}
+
+/// Three dots that brighten one after another.
+///
+/// An [Interval] per dot off a single controller, so the whole indicator is one
+/// ticker rather than three animations that drift apart. The dots return to
+/// their dim base between pulses instead of restarting from bright, which is
+/// what makes the loop read as continuous rather than as three blinks.
+class _PulsingDots extends StatelessWidget {
+  const _PulsingDots({required this.animation});
+
+  final Animation<double> animation;
+
+  static const int _dotCount = 3;
+
+  /// Active window for each dot as a fraction of the cycle. 0.3 of 1100 ms is
+  /// a ~330 ms pulse with a gap before the next — the gap is what makes the
+  /// sequence legible as a sequence.
+  static const double _slot = 0.3;
+
+  @override
+  Widget build(BuildContext context) {
+    final base = Theme.of(context).colorScheme.onSurfaceVariant;
+    final peak = AppColors.accent;
+
+    // Built once per build rather than per frame: a CurvedAnimation allocated
+    // inside an AnimatedBuilder's builder is re-created on every tick for no
+    // reason.
+    final pulses = [
+      for (var i = 0; i < _dotCount; i++)
+        CurvedAnimation(
+          parent: animation,
+          curve: Interval(i * _slot, (i + 1) * _slot, curve: Curves.easeOut),
+        ),
+    ];
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < _dotCount; i++) ...[
+          AnimatedBuilder(
+            animation: pulses[i],
+            builder: (context, _) => Container(
+              width: 7,
+              height: 7,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Color.lerp(base, peak, pulses[i].value),
+              ),
+            ),
+          ),
+          if (i != _dotCount - 1) const SizedBox(width: 5),
+        ],
+      ],
     );
   }
 }

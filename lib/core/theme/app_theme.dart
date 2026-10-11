@@ -307,6 +307,18 @@ class AppTheme {
       ),
       splashFactory: InkRipple.splashFactory,
       visualDensity: VisualDensity.adaptivePlatformDensity,
+
+      // Every route in the app is pushed with MaterialPageRoute, so this is
+      // where the transition is decided: a short fade-up instead of the
+      // platform's full-width slide. Pushes here are shallow (settings, model
+      // picker, dialogs) and a slide implies a depth hierarchy that does not
+      // exist.
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
+          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+        },
+      ),
     );
   }
 
