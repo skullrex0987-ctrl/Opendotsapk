@@ -151,6 +151,24 @@ jobs:
           echo "apk_path=out/${name}" >> "$GITHUB_OUTPUT"
           echo "Produced out/${name}"
 
+      # Gate: Android 15+ supports 16 KB memory pages, and from November 2025
+      # Google Play requires every native library to declare 16 KB ELF segment
+      # alignment. A .so linked with a 4 KB p_align cannot be mmapped on a
+      # 16 KB-page device, so the library simply fails to load there. Unlike
+      # most build-time mistakes this one is invisible on a normal 4 KB device,
+      # so it is checked here. The script prints the alignment it found per
+      # library and exits non-zero if any PT_LOAD segment is not a multiple of
+      # 0x4000. See docs/PAGE_ALIGNMENT.md.
+      - name: Check 16 KB page alignment of native libraries
+        run: |
+          set -euo pipefail
+          # Own venv so a PEP 668 "externally managed" system Python cannot
+          # block the install.
+          python3 -m venv "$RUNNER_TEMP/elfcheck"
+          "$RUNNER_TEMP/elfcheck/bin/pip" install --quiet --upgrade pip pyelftools
+          "$RUNNER_TEMP/elfcheck/bin/python" scripts/check_page_alignment.py \
+            "${{ steps.collect.outputs.apk_path }}"
+
       # Gate: the APK's manifest version must equal the release tag, otherwise
       # the artifact would silently ship a version that disagrees with its tag —
       # exactly the drift this workflow exists to prevent.
