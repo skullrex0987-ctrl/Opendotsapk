@@ -21,6 +21,11 @@ class EmbeddingService {
   OrtSession? _session;
   bool _isLoaded = false;
   int _dim = 384;
+  /// Token limit of all-MiniLM-L6-v2.
+  ///
+  /// Chunking is sized against this — see `TextUtils.embedChunkChars`. Anything
+  /// past this point is silently ignored by the model, so a chunk longer than
+  /// the limit is only partly searchable.
   int _maxTokens = 128;
 
   /// Whether a model is loaded and ready to embed.

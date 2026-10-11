@@ -79,6 +79,21 @@ class TextUtils {
     return dot / (math.sqrt(na) * math.sqrt(nb));
   }
 
+  /// Characters a chunk may hold, sized to the embedder.
+  ///
+  /// The ONNX embedder (all-MiniLM-L6-v2) truncates at 128 tokens. At roughly
+  /// four characters per token that is close to 512 characters, and chunks used
+  /// to be 900 — so the tail of every chunk was silently never embedded and
+  /// could never be retrieved. 480 keeps headroom for tokenizer variance and
+  /// for denser stretches of text.
+  static const int embedChunkChars = 480;
+
+  /// Overlap between neighbouring chunks — 20% of [embedChunkChars].
+  ///
+  /// A fact sitting exactly on a boundary is invisible to both neighbours
+  /// without this.
+  static const int embedChunkOverlap = 96;
+
   /// Split [text] into overlapping windows on paragraph/sentence boundaries.
   ///
   /// Overlap matters for retrieval: a fact sitting on a chunk boundary is
@@ -86,8 +101,8 @@ class TextUtils {
   /// hard character cuts so chunks stay readable when shown as citations.
   static List<String> chunk(
     String text, {
-    int targetChars = 900,
-    int overlapChars = 150,
+    int targetChars = embedChunkChars,
+    int overlapChars = embedChunkOverlap,
   }) {
     final clean = text.replaceAll('\r\n', '\n').trim();
     if (clean.isEmpty) return const [];

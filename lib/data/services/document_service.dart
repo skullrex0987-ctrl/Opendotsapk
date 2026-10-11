@@ -4,7 +4,8 @@
 ///  * **Plain text family** (txt, md, csv, json, log, yaml, and code files) is
 ///    read directly. No dependency, exact fidelity, and it covers most of what
 ///    people actually want to ask about.
-///  * **PDF** goes through `flutter_pdf_text`, which extracts the text layer.
+///  * **PDF** goes through the in-process extractor in `pdf_text_extractor.dart`,
+///    which inflates FlateDecode content streams before scanning for text.
 ///    Scanned PDFs have no text layer and yield nothing — that is reported
 ///    honestly rather than producing an empty "summary" of nothing.
 ///  * **DOCX** is a ZIP of XML; the whole document body is one `word/`
@@ -25,6 +26,7 @@ import 'package:path/path.dart' as p;
 
 import '../../core/utils/log.dart';
 import '../../core/utils/text_utils.dart';
+import 'pdf_text_extractor.dart';
 
 class IngestedDocument {
   final String name;
@@ -165,20 +167,25 @@ class DocumentService {
 
   /// Extract a PDF's text layer.
   ///
-  /// Uses `flutter_pdf_text`, which is extraction-only (no rendering), so it
-  /// needs no extra native surface beyond what the plugin ships.
+  /// Uses the in-process extractor in `pdf_text_extractor.dart`, which inflates
+  /// FlateDecode content streams. The previous implementation regex-scanned raw
+  /// bytes and never inflated, so it found nothing in any PDF that compressed
+  /// its content — which is almost all of them.
+  ///
+  /// The extractor itself never throws; an empty result means there was no text
+  /// layer, which is the normal case for a scan.
   Future<String> _readPdf(File file, String name) async {
-    try {
-      final extractor = PdfTextExtractor();
-      final text = await extractor.extractText(filePath: file.path);
-      return text;
-    } catch (e) {
-      Log.w('pdf extraction failed for $name: $e');
+    final bytes = await file.readAsBytes();
+    final text = extractPdfText(bytes);
+
+    if (text.trim().isEmpty) {
+      Log.w('pdf "$name" has no text layer (${bytes.length} bytes)');
       throw const DocumentException(
-        'Could not read that PDF. If it is a scan it has no text layer — '
-        'paste the text instead.',
+        'That PDF has no text layer — it is most likely a scan. Paste the '
+        'text instead.',
       );
     }
+    return text;
   }
 
   /// DOCX is a ZIP; `word/document.xml` holds the body.
@@ -277,48 +284,10 @@ class DocumentException implements Exception {
   String toString() => message;
 }
 
-/// Minimal, dependency-free PDF text extraction.
+/// PDF text extraction lives in `pdf_text_extractor.dart`.
 ///
-/// Only used as a fallback when the platform extractor is unavailable; it walks
-/// the PDF's content streams for `Tj`/`TJ` text operators. Works on text-layer
-/// PDFs produced by normal office software, and returns an empty string (never
-/// throws) on anything it does not understand.
-class PdfTextExtractor {
-  Future<String> extractText({required String filePath}) async {
-    try {
-      final bytes = await File(filePath).readAsBytes();
-      final raw = latin1.decode(bytes, allowInvalid: true);
-      final buf = StringBuffer();
+/// The class that used to sit here regex-scanned the raw file for `(...)Tj`
+/// without ever inflating FlateDecode content streams, so it returned nothing
+/// for essentially every real-world PDF. It also called a `flutter_pdf_text`
+/// API the project does not depend on.
 
-      // Text-showing operators: (literal) Tj  and  [(a) -10 (b)] TJ
-      final literal = RegExp(r'\(((?:\\.|[^\\()])*)\)\s*Tj', dotAll: true);
-      for (final m in literal.allMatches(raw)) {
-        buf.write(_unescapePdf(m.group(1) ?? ''));
-        buf.write(' ');
-      }
-
-      final array = RegExp(r'\[(.*?)\]\s*TJ', dotAll: true);
-      for (final m in array.allMatches(raw)) {
-        final inner = m.group(1) ?? '';
-        for (final lit in RegExp(r'\(((?:\\.|[^\\()])*)\)').allMatches(inner)) {
-          buf.write(_unescapePdf(lit.group(1) ?? ''));
-        }
-        buf.write(' ');
-      }
-
-      // Also try to recover if the file is uncompressed with FlateDecode absent.
-      final text = buf.toString();
-      return text.replaceAll(RegExp(r'\s{3,}'), '\n').trim();
-    } catch (_) {
-      return '';
-    }
-  }
-
-  static String _unescapePdf(String s) => s
-      .replaceAll(r'\(', '(')
-      .replaceAll(r'\)', ')')
-      .replaceAll(r'\\', r'\')
-      .replaceAll(r'\n', '\n')
-      .replaceAll(r'\r', '\n')
-      .replaceAll(r'\t', '\t');
-}
