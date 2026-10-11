@@ -405,13 +405,16 @@ class CloudService {
         },
     };
 
+    // The key goes in a header, never the query string. A key in a URL leaks
+    // into server logs, proxy logs and crash reports — and any error message
+    // that echoes the request URL would print it straight into the chat.
     final uri = Uri.parse(
-      '${_trim(baseUrl)}/models/${turn.modelId}:streamGenerateContent'
-      '?alt=sse&key=${Uri.encodeQueryComponent(apiKey)}',
+      '${_trim(baseUrl)}/models/${turn.modelId}:streamGenerateContent?alt=sse',
     );
 
     final request = http.Request('POST', uri)
       ..headers['Content-Type'] = 'application/json'
+      ..headers['x-goog-api-key'] = apiKey
       ..body = jsonEncode(body);
 
     final promptChars = turn.messages.fold<int>(
@@ -478,8 +481,24 @@ class CloudService {
         .where((l) => l.isNotEmpty);
   }
 
+  /// How long the provider gets to start responding.
+  static const Duration _connectTimeout = Duration(seconds: 15);
+
+  /// How long the stream may go silent once it has started.
+  ///
+  /// Without these two timeouts a stalled cloud stream hung the UI on
+  /// "Thinking…" indefinitely — the same visible symptom as the v1.1.0 local
+  /// bug, from an entirely different cause.
+  static const Duration _inactivityTimeout = Duration(seconds: 60);
+
   Stream<String> _sseFromRequest(http.Request request) async* {
-    final response = await _client.send(request);
+    final response = await _client.send(request).timeout(
+          _connectTimeout,
+          onTimeout: () => throw CloudException(
+            'The provider did not start responding within '
+            '${_connectTimeout.inSeconds}s. Check your connection and try again.',
+          ),
+        );
     if (response.statusCode >= 400) {
       final text = await response.stream.bytesToString();
       throw CloudException(
@@ -488,6 +507,15 @@ class CloudService {
       );
     }
     yield* response.stream
+        .timeout(
+          _inactivityTimeout,
+          onTimeout: (sink) => sink.addError(
+            CloudException(
+              'The stream stalled — no data for '
+              '${_inactivityTimeout.inSeconds}s. The reply was cut short.',
+            ),
+          ),
+        )
         .transform(utf8.decoder)
         .transform(const LineSplitter())
         .where((l) => l.startsWith('data:'))

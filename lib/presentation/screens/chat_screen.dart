@@ -14,6 +14,7 @@ import '../widgets/message_bubble.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/utils/log.dart';
 import '../../core/utils/text_utils.dart';
+import '../../core/utils/turn_builder.dart';
 import '../../data/services/document_service.dart';
 import '../../data/services/gpu_service.dart';
 import '../../data/services/cloud_service.dart';
@@ -48,8 +49,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   /// Set after a send so the UI can show where the turn actually ran.
   String? _lastRoute;
 
+  /// The in-flight cloud request, held so Stop can actually cancel it. The
+  /// local path is stopped through `LlmService.stop()` instead.
+  StreamSubscription<String>? _cloudSub;
+
+  /// Set when the user asks to stop. The token loop checks it and **keeps the
+  /// partial text** rather than throwing away a half-finished reply.
+  bool _stopRequested = false;
+
+  /// Tokens waiting to be shown.
+  ///
+  /// `setState` used to run once per token, rebuilding this entire screen
+  /// hundreds of times a second for no visible benefit. Tokens now accumulate
+  /// here and are flushed on a timer.
+  String _pendingTokens = '';
+  Timer? _flushTimer;
+
   @override
   void dispose() {
+    _flushTimer?.cancel();
+    _cloudSub?.cancel();
     _controller.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -175,10 +194,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
+                // While a reply streams this becomes Stop. It used to be merely
+                // disabled, so there was no way to cancel one — the only cancel
+                // icon in the composer removed an attached image.
                 IconButton(
-                  icon: const Icon(Icons.send),
-                  onPressed: _isThinking ? null : _sendMessage,
-                  color: AppConstants.primaryColor,
+                  icon: Icon(_isThinking ? Icons.stop_circle : Icons.send),
+                  tooltip: _isThinking ? 'Stop generating' : 'Send',
+                  onPressed: _isThinking
+                      ? () => _stopGeneration()
+                      : () => _sendMessage(),
+                  color: _isThinking
+                      ? Theme.of(context).colorScheme.error
+                      : AppConstants.primaryColor,
                 ),
               ],
             ),
@@ -429,6 +456,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       _attachedDocs.clear();
     });
 
+    // Snapshot the conversation BEFORE this message is appended. The old code
+    // read it afterwards and then appended the message again, so the model was
+    // given the question twice.
+    final priorHistory = List<ChatMessage>.from(ref.read(chatMessagesProvider));
+
+    _stopRequested = false;
+    _pendingTokens = '';
+
     // Add user message
     final userMessage = ChatMessage(
       id: _uuid.v4(),
@@ -458,7 +493,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     if (context.mounted) setState(() => _lastRoute = decision.reason);
 
     if (decision.isCloud) {
-      await _sendViaCloud(decision, '$display$docCtx', imagePath);
+      await _sendViaCloud(decision, '$display$docCtx', imagePath, priorHistory);
       return;
     }
 
@@ -474,18 +509,24 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     });
 
     try {
-      final recentMessages = ref.read(chatMessagesProvider);
+      final request = _buildRequest(
+        message: '$display$docCtx',
+        priorHistory: priorHistory,
+      );
 
       // Streaming response
       await for (final token in llmService.generateStream(
-        prompt: _buildPrompt('$display$docCtx', recentMessages),
+        prompt: request.prompt,
+        systemPrompt: request.systemPrompt,
+        history: request.history,
+        maxTokens: _maxResponseTokens,
         imagePath: imagePath,
       )) {
-        setState(() {
-          _currentResponse += token;
-        });
+        if (_stopRequested) break;
+        _bufferToken(token);
       }
 
+      _flushNow();
       await _finishAssistantMessage();
     } catch (e) {
       if (mounted) {
@@ -509,6 +550,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     RouteDecision decision,
     String prompt,
     String? imagePath,
+    List<ChatMessage> priorHistory,
   ) async {
     final provider = decision.provider;
     if (provider == null) {
@@ -522,12 +564,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     });
 
     try {
-      final history = ref.read(chatMessagesProvider);
-      final messages = <Map<String, String>>[];
-      for (final m in history.take(12)) {
-        messages.add({'role': m.role, 'content': m.content});
-      }
-      messages.add({'role': 'user', 'content': prompt});
+      // Same newest-first, budgeted selection as the local path. This used to
+      // be `history.take(12)`, i.e. the twelve OLDEST messages.
+      final request = _buildRequest(
+        message: prompt,
+        priorHistory: priorHistory,
+      );
+      final messages = <Map<String, String>>[
+        if (request.systemPrompt != null)
+          {'role': 'system', 'content': request.systemPrompt!},
+        ...request.history,
+        {'role': 'user', 'content': request.prompt},
+      ];
 
       final imagesB64 = <String>[];
       if (imagePath != null) {
@@ -539,19 +587,41 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       }
 
       final cloud = ref.read(cloudServiceProvider);
-      await for (final token in cloud.stream(
-        provider: provider,
-        turn: CloudTurn(
-          modelId: decision.modelId,
-          messages: messages,
-          imageBase64: imagesB64,
-        ),
-      )) {
-        if (mounted) {
-          setState(() => _currentResponse += token);
-        }
+
+      // Listen through a subscription rather than `await for` so Stop has
+      // something it can actually cancel.
+      final completer = Completer<void>();
+      _cloudSub = cloud
+          .stream(
+            provider: provider,
+            turn: CloudTurn(
+              modelId: decision.modelId,
+              messages: messages,
+              imageBase64: imagesB64,
+            ),
+          )
+          .listen(
+            (token) {
+              if (_stopRequested) return;
+              _bufferToken(token);
+            },
+            onError: (Object e) {
+              if (!completer.isCompleted) completer.completeError(e);
+            },
+            onDone: () {
+              if (!completer.isCompleted) completer.complete();
+            },
+            cancelOnError: true,
+          );
+
+      try {
+        await completer.future;
+      } finally {
+        await _cloudSub?.cancel();
+        _cloudSub = null;
       }
 
+      _flushNow();
       await _finishAssistantMessage();
     } catch (e) {
       Log.w('cloud turn failed: $e');
@@ -575,13 +645,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   Future<void> _finishAssistantMessage() async {
     if (_currentResponse.trim().isEmpty) return;
 
+    // A stopped reply is kept and labelled rather than discarded: half a useful
+    // answer is worth more than none, but the history should say what happened.
+    final content = _stopRequested
+        ? '$_currentResponse\n\n_(stopped)_'
+        : _currentResponse;
+
     final assistantMessage = ChatMessage(
       id: _uuid.v4(),
       role: 'assistant',
-      content: _currentResponse,
+      content: content,
       timestamp: DateTime.now().millisecondsSinceEpoch,
     );
     await ref.read(chatMessagesProvider.notifier).addMessage(assistantMessage);
+
+    // Speaking a half-finished sentence is worse than not speaking it.
+    if (_stopRequested) return;
 
     final ttsEnabled =
         ref.read(settingsProvider)['tts_enabled'] as bool? ?? true;
@@ -611,17 +690,106 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
   
-  String _buildPrompt(String message, List<ChatMessage> history) {
-    final recentHistory = history.take(10).map((m) {
-      return '${m.role}: ${m.content}';
-    }).join('\n');
-    
-    return '''$recentHistory
+  /// Tokens reserved for the reply when budgeting history.
+  ///
+  /// Without this the transcript can fill the whole context window and the
+  /// model has no room left to answer.
+  static const int _maxResponseTokens = 512;
 
-User: $message
+  /// Builds the system prompt, the question, and the history to send.
+  ///
+  /// [priorHistory] must be the conversation **before** the current message.
+  /// The old code read the provider *after* appending the user message and then
+  /// appended it to the prompt again, so the model saw the question twice.
+  ///
+  /// Selection is newest-first under a token budget (see [buildRecentTurns]).
+  /// The old `history.take(10)` took the ten OLDEST messages of a chronological
+  /// list, so a long conversation sent the opening turns and nothing recent.
+  ///
+  /// The return is split into the parts `LlmService.generateStream` expects,
+  /// which is what keeps `test/llm_wire_format_test.dart` green.
+  ({String prompt, String? systemPrompt, List<Map<String, String>> history})
+      _buildRequest({
+    required String message,
+    required List<ChatMessage> priorHistory,
+  }) {
+    final settings = ref.read(settingsProvider);
+    final personality = settings['personality'] as String?;
+    final nCtx = ref.read(llmServiceProvider).contextSize;
 
-Assistant:
-''';
+    final selection = buildRecentTurns(
+      history: [
+        for (final m in priorHistory) Turn(m.role, m.content),
+        Turn('user', message),
+      ],
+      tokenBudget: nCtx,
+      systemPrompt: (personality == null || personality.trim().isEmpty)
+          ? null
+          : personality,
+      reserveForResponse: _maxResponseTokens,
+    );
+
+    final turns = selection.turns;
+    if (turns.isEmpty) {
+      return (prompt: message, systemPrompt: null, history: const []);
+    }
+
+    final hasSystem = turns.first.role == 'system';
+    final systemPrompt = hasSystem ? turns.first.content : null;
+    final prompt = turns.last.content;
+
+    // Everything between the system prompt and the question is history.
+    final body = turns.sublist(
+      hasSystem ? 1 : 0,
+      turns.length - 1,
+    );
+
+    return (
+      prompt: prompt,
+      systemPrompt: systemPrompt,
+      history: [
+        for (final t in body) {'role': t.role, 'content': t.content},
+      ],
+    );
+  }
+
+  /// Buffers a streamed token and schedules one UI update.
+  ///
+  /// `setState` used to run per token, rebuilding this whole screen hundreds of
+  /// times a second for no visible benefit.
+  void _bufferToken(String token) {
+    _pendingTokens += token;
+    _flushTimer ??= Timer(const Duration(milliseconds: 50), _flushNow);
+  }
+
+  void _flushNow() {
+    _flushTimer?.cancel();
+    _flushTimer = null;
+    if (_pendingTokens.isEmpty || !mounted) return;
+    final chunk = _pendingTokens;
+    _pendingTokens = '';
+    setState(() => _currentResponse += chunk);
+    _scrollToBottom();
+  }
+
+  /// Stops generation, keeping whatever text already arrived.
+  ///
+  /// There was no way to stop a reply at all before this: the only cancel icon
+  /// in the composer removed an attached image.
+  Future<void> _stopGeneration() async {
+    if (!_isThinking || _stopRequested) return;
+    _stopRequested = true;
+
+    // The cloud path is cancelled through its subscription; the local path
+    // through the service, which closes the stream the loop is awaiting.
+    await _cloudSub?.cancel();
+    _cloudSub = null;
+    try {
+      await ref.read(llmServiceProvider).stop();
+    } catch (e) {
+      Log.w('stop failed: $e');
+    }
+    _flushNow();
   }
   
   void _clearChat() {
