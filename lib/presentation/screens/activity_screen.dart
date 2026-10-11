@@ -1,6 +1,22 @@
-/// Activity log screen
+/// Activity screen.
+///
+/// Two tabs, because there are two genuinely different things worth looking at:
+///
+///  * **Tool activity** — what the agent did (from the database).
+///  * **Diagnostics**   — the app's own `Log` ring.
+///
+/// The diagnostics tab exists because without it a runtime failure is
+/// invisible. `Log` keeps a bounded in-memory ring precisely so bug reports can
+/// read it, but nothing in the UI ever rendered it, and `debugPrint` is stripped
+/// from release builds — so on a real phone the reason a model failed to load
+/// was unreadable. "Vision failed to attach" with no cause is exactly that gap.
+library;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../core/utils/log.dart';
 import '../providers/providers.dart';
 
 class ActivityScreen extends ConsumerWidget {
@@ -8,76 +24,173 @@ class ActivityScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final activityLog = ref.watch(activityLogProvider);
-    final notifier = ref.read(activityLogProvider.notifier);
-    
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Activity Log'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () => notifier.refresh(),
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Activity'),
+          bottom: const TabBar(
+            tabs: [
+              Tab(text: 'Tool activity'),
+              Tab(text: 'Diagnostics'),
+            ],
           ),
-          IconButton(
-            icon: const Icon(Icons.delete_sweep),
-            onPressed: () => _clearLog(context, ref),
-          ),
-        ],
+        ),
+        body: const TabBarView(
+          children: [
+            _ToolActivityTab(),
+            _DiagnosticsTab(),
+          ],
+        ),
       ),
-      body: activityLog.isEmpty
-          ? const Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.history, size: 64, color: Colors.grey),
-                  SizedBox(height: 16),
-                  Text(
-                    'No activity yet',
-                    style: TextStyle(fontSize: 18, color: Colors.grey),
-                  ),
-                ],
-              ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: activityLog.length,
-              itemBuilder: (context, index) {
-                final entry = activityLog[index];
-                return ActivityEntry(entry: entry);
-              },
-            ),
     );
   }
-  
-  void _clearLog(BuildContext context, WidgetRef ref) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Clear Activity Log'),
-        content: const Text('Are you sure you want to clear all activity logs?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              // In production, delete all entries
-              if (context.mounted) Navigator.pop(context);
-            },
-            child: const Text('Clear'),
-          ),
-        ],
-      ),
+}
+
+/// Historical list of tool calls, read from the database.
+class _ToolActivityTab extends ConsumerWidget {
+  const _ToolActivityTab();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final activityLog = ref.watch(activityLogProvider);
+
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            TextButton.icon(
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('Refresh'),
+              onPressed: () => ref.read(activityLogProvider.notifier).refresh(),
+            ),
+          ],
+        ),
+        Expanded(
+          child: activityLog.isEmpty
+              ? const Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.history, size: 64, color: Colors.grey),
+                      SizedBox(height: 16),
+                      Text(
+                        'No activity yet',
+                        style: TextStyle(fontSize: 18, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: activityLog.length,
+                  itemBuilder: (context, index) {
+                    return ActivityEntry(entry: activityLog[index]);
+                  },
+                ),
+        ),
+      ],
     );
+  }
+}
+
+/// The `Log` ring, finally reachable by the user.
+///
+/// Copy-to-clipboard is the important affordance: the point of this tab is to
+/// get the actual failure text out of the phone.
+class _DiagnosticsTab extends StatefulWidget {
+  const _DiagnosticsTab();
+
+  @override
+  State<_DiagnosticsTab> createState() => _DiagnosticsTabState();
+}
+
+class _DiagnosticsTabState extends State<_DiagnosticsTab> {
+  @override
+  Widget build(BuildContext context) {
+    final entries = Log.recent(limit: 500);
+
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            TextButton.icon(
+              icon: const Icon(Icons.copy, size: 18),
+              label: const Text('Copy'),
+              onPressed: () async {
+                await Clipboard.setData(ClipboardData(text: Log.dump()));
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Diagnostics copied')),
+                  );
+                }
+              },
+            ),
+            TextButton.icon(
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('Refresh'),
+              onPressed: () => setState(() {}),
+            ),
+            TextButton.icon(
+              icon: const Icon(Icons.delete_sweep, size: 18),
+              label: const Text('Clear'),
+              onPressed: () => setState(Log.clear),
+            ),
+          ],
+        ),
+        const Divider(height: 1),
+        Expanded(
+          child: entries.isEmpty
+              ? const Center(
+                  child: Text(
+                    'Nothing logged yet.\nLoad a model, then come back.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.all(12),
+                  itemCount: entries.length,
+                  itemBuilder: (context, index) {
+                    final entry = entries[index];
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Text(
+                        entry.formatted,
+                        style: TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 11,
+                          color: _colorFor(entry.level),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  Color? _colorFor(LogLevel level) {
+    switch (level) {
+      case LogLevel.error:
+        return Colors.redAccent;
+      case LogLevel.warn:
+        return Colors.orangeAccent;
+      case LogLevel.info:
+        return null;
+      case LogLevel.debug:
+        return Colors.grey;
+    }
   }
 }
 
 /// Activity entry widget
 class ActivityEntry extends StatelessWidget {
   final Map<String, dynamic> entry;
-  
+
   const ActivityEntry({
     super.key,
     required this.entry,
@@ -86,7 +199,7 @@ class ActivityEntry extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isSuccess = entry['status'] == 'success';
-    
+
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
@@ -124,10 +237,11 @@ class ActivityEntry extends StatelessWidget {
       ),
     );
   }
-  
+
   String _formatTimestamp(int? timestamp) {
     if (timestamp == null) return '';
     final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
-    return '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
+    return '${date.day}/${date.month}/${date.year} '
+        '${date.hour}:${date.minute.toString().padLeft(2, '0')}';
   }
 }

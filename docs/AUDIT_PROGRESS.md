@@ -90,6 +90,22 @@ audit on trust.
 | D2 | Finish this file + `DEVICE_TEST_CHECKLIST.md` | in-progress | |
 | D3 | Final report per task ID | todo | |
 
+### Phase E — vision & model management (owner-reported, 2026-10-11)
+
+Triggered by a real phone: an image was sent to a downloaded vision model and the
+reply was *"I didn't understand your question"*.
+
+| ID | Task | Status | Note |
+|---|---|---|---|
+| E1 | Vision failure root cause | **done** | `initVision` was failing, not silently dropping: the snackbar read *"Qwen2.5 0.5B Instruct loaded, but vision failed to attach."* Root cause proven by inspecting the vendored tree: the `projector_type` enum in `tools/mtmd/clip-impl.h` has **42 members and no `moondream`** — `grep -r MOONDREAM tools/mtmd/` returns zero hits. Moondream2's projector loads as `PROJECTOR_TYPE_UNKNOWN`. **It could never have worked.** See `docs/MODEL_SUPPORT.md`. |
+| E2 | Add Qwen3.5 0.8B (owner request) | **done** | Verified real: `Qwen/Qwen3.5-0.8B`, 0.9B, Apache 2.0, 262K ctx, image-text-to-text, released 2026-03-02. Runtime support confirmed in the vendored tree (`llama-arch.cpp` `LLM_ARCH_QWEN35`→`"qwen35"`, `src/models/qwen35.cpp`, `llama-vocab.cpp:2029` `tokenizer_pre == "qwen35"`, `clip.cpp` `PROJECTOR_TYPE_QWEN3VL`). Pinned to commit `6ab461498e2023f6e3c1baea90a8f0fe38ab64d0`: Q4_K_M **532,517,120 B** + `mmproj-F16` **204,987,232 B** = **703 MB**, against Moondream2's 1.97 GB. Both URLs `HEAD`-checked; `Content-Length` matches. |
+| E3 | Images were dropped silently | **done** | `LlmService.generateStream` passed `mediaPaths` with no check that a projector was loaded — the plugin discards them and the model answers a question it never received. Now throws a `StateError` naming the cause. |
+| E4 | Router downgraded image turns to a text model | **done** | Added `RouteTarget.refused` + `isRefused`. When an image turn has no vision anywhere it is refused and the reason goes into the transcript; no model is invoked. Previously it returned `local` and the image was dropped. |
+| E5 | App log was unreachable | **done** | `Log` keeps a 500-entry ring *"so bug reports can read it"*, but had **zero call sites in the UI** — so on a release phone the reason a model failed was unreadable. Activity screen now has a **Diagnostics** tab with copy-to-clipboard. |
+| E6 | Model Management: choose models from the sheet | **done** | The dialog offered only "Load Selected Model" (with a hardcoded `Qwen2.5-1.5B` subtitle) and "Load from Storage". It is now a picker: every catalogue model with size, downloaded state, selection state, plus a **mismatch warning** when the file in memory is not the one selected. |
+| E7 | Vision-load failure hid its cause | **done** | `loadVision` swallowed the plugin's error into a generic callback. It now records `lastVisionError`, logs it at error level, and the chat snackbar appends the real text. |
+| E8 | Moondream2 disabled, not deleted | **done** | `LocalModel.unsupportedReason` added; `ModelCatalog.isUsable` now reads it instead of returning a hardcoded `true`. Moondream2 stays listed (greyed out, reason shown) so a user holding 1.97 GB gets an explanation. Files on disk are never touched. |
+
 ---
 
 ## Evidence log
@@ -110,6 +126,10 @@ CI runs are cited by run id. Green = all steps succeeded.
 | 2026-10-11 | A1+A3+A4+B3+docs, first attempt | `56ea925` | `38135144800` | ❌ 1 compile error: `database_helper.dart:504` called `.value` on the sealed base `DecryptResult` (flow promotion failed after a `continue`). 161 tests had passed. |
 | 2026-10-11 | A4 positive type check | `aa4b69f` | `38135507009` | ❌ tests passed, APK build failed: `ToolResult` imported from both `models.dart` and `tool_result.dart`. |
 | 2026-10-11 | A1 removed the dead legacy `ToolResult` | `7c32bc3` | `38135906029` | ✅ **green, 11m24s, 180 tests.** Vulkan + vision + onnxruntime all verified present. |
+| 2026-10-11 | E1 moondream projector support, inspected the vendored tree | (no commit) | — | **Proven absent:** `projector_type` enum has 42 members, none `moondream`; `grep -r MOONDREAM tools/mtmd/` = 0 hits. |
+| 2026-10-11 | E2 Qwen3.5 pins read from the HF API at a pinned commit | (local) | — | sizes/hashes fetched programmatically at `6ab4614…`; **both URLs `HEAD`-verified, `Content-Length` matches** (532,517,120 / 204,987,232). |
+| 2026-10-11 | E1–E8 catalogue logic, standalone Dart probe | (local) | — | **19/19 pass** — `dart run catalog_verify.dart` on `dart` 3.13.5 at `/opt/dart-sdk`. |
+| 2026-10-11 | E1–E8 parse gate across all `lib`/`test` files | (local) | — | **0 real parse failures / 50 files** (`dart format --output=none`). |
 
 ### What the green run proves
 
@@ -166,4 +186,46 @@ practical experience is an endless restart loop.
 that the `.part` file be kept rather than deleted, that `Range`/`If-Range` be
 used, and that a resumed transfer be validated against the full expected size
 rather than the ranged content-length. The catalogue size error is fixed too.
+
+---
+
+## Live bug reported by the owner (2026-10-11) — vision returns nothing
+
+**Symptom:** an image was attached to a downloaded vision model and the reply
+was *"I'm sorry, I didn't understand your question."*
+
+**The real message was on screen and easy to miss:** loading the models produced
+
+```
+Qwen2.5 0.5B Instruct loaded, but vision failed to attach.
+```
+
+**Diagnosed, not assumed.** That string is emitted only when
+`LlmService.loadVision()` returns `false`, i.e. when the plugin's native
+`initVision` threw or returned false. Inspecting the vendored llama.cpp inside
+`native_llama` 1.0.1:
+
+- `ios/shared_cpp/tools/mtmd/clip-impl.h` defines `enum projector_type` with 42
+  members. **None is Moondream2.**
+- `grep -rn "MOONDREAM\|moondream"` across all of `tools/mtmd/` returns **nothing**.
+
+So Moondream2's projector is parsed as `PROJECTOR_TYPE_UNKNOWN` and the load
+fails. The catalogue's own comment — *"the only small GGUF whose projector
+llama.cpp can actually serve on-device"* — asserted the opposite of the truth.
+
+**Two further defects found while tracing it:**
+
+1. `generateStream` took `imagePath` and passed it to the plugin with no check
+   that a projector existed. The plugin discards such media, so the model
+   answers a question that was never actually asked. This is why the reply was
+   a confused generic sentence rather than an error.
+2. The router's comment said it would *"be explicit instead of silently dropping
+   the image"*, but it returned `RouteTarget.local` — the "explicitness" was a
+   badge string, and the drop still happened.
+
+**Fix owner:** Phase E (E1–E8). Moondream2 is disabled with a reason, Qwen3.5
+0.8B is added as a verified native-vision replacement at less than half the
+download size, the silent drop now throws, the router refuses, and the app's log
+ring is finally readable in the UI. All of it needs the device checklist before
+it can be called working.
 

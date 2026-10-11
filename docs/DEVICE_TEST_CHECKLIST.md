@@ -100,14 +100,31 @@ Cannot be fully tested until a real keystore exists.
 
 ## 5. Barely-tested areas
 
-- [ ] **Vision:** download Moondream2, attach a photo from the gallery, confirm a
-      description comes back (or an honest error — never a fabricated one).
+- [ ] **Vision (the fix):** download **Qwen3.5 0.8B**, tap **Load**, and confirm
+      the snackbar says *"…ready."* — **not** *"vision failed to attach"*. Then
+      attach a photo from the gallery and confirm a real description comes back.
+      If it does fail to attach, open **Activity → Diagnostics** and copy the
+      log; the projector's own error text is recorded there now.
+- [ ] **Vision refusal:** with **no** vision model loaded, attach an image and
+      send. The reply must be the explicit *"no vision model is loaded"*
+      message. It must **not** be a generic "I didn't understand your question"
+      — that sentence is the signature of a dropped image.
+- [ ] **Moondream2 is disabled:** confirm it is greyed out, states why, and
+      cannot be selected or downloaded.
+- [ ] **Qwen3.5 as a chat brain:** load it and send a plain text message.
+      It should answer normally — it is a chat model *and* a vision model.
+- [ ] **Model Management sheet:** from the chat header, confirm the model
+      actually in memory is shown, that every row shows size and download state,
+      and that changing the selection raises the mismatch warning.
+- [ ] **Diagnostics tab:** Activity → Diagnostics. Confirm entries appear and
+      **Copy** puts them on the clipboard.
 - [ ] **GPU:** Settings → Performance. Record the reported backend, then run the
       benchmark on both CPU and GPU and record tok/s for each. **Do not assume
       GPU is faster** — on midrange Mali it often is not. Report the numbers.
 - [ ] **Cloud BYOK:** add a key, send a message, confirm it leaves the device
       only when expected. Confirm Private mode blocks it.
-- [ ] **Stop button:** (not implemented yet — see A5.)
+- [ ] **Stop button:** send a long prompt, tap Stop mid-generation, confirm the
+      reply is kept and marked stopped.
 
 ---
 

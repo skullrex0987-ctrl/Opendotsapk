@@ -77,8 +77,10 @@ void main() {
       expect(d.provider?.id, 'openai');
     });
 
-    test('image with no vision anywhere stays local and says so', () {
-      // A text-only provider cannot help, so do not pretend it can.
+    test('image with no vision anywhere is refused, never quietly downgraded', () {
+      // Neither a text-only provider nor a text-only local model can see the
+      // picture. Asking either one returns a confident answer to a question
+      // that was never actually asked, so the turn must be refused instead.
       router.setCandidates([
         (provider: CloudCatalog.byId('deepseek')!, modelId: 'deepseek-chat'),
       ]);
@@ -90,7 +92,24 @@ void main() {
         localModelReady: true,
       );
       expect(d.isCloud, isFalse);
-      expect(d.reason.toLowerCase(), contains('no vision'));
+      expect(d.isRefused, isTrue);
+      expect(d.reason.toLowerCase(), contains('no vision model'));
+    });
+
+    test('a refused image turn never falls back to the local text model', () {
+      // Regression guard: this used to return RouteTarget.local with a reason
+      // string, which then sent the image to a text model that silently
+      // discarded it.
+      router.setCandidates(const []);
+      final d = router.decide(
+        prompt: 'look at this',
+        config: auto,
+        hasImages: true,
+        localVisionReady: false,
+        localModelReady: true,
+      );
+      expect(d.target, RouteTarget.refused);
+      expect(d.isRefused, isTrue);
     });
 
     test('image with local vision stays eligible for local', () {

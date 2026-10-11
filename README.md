@@ -14,7 +14,7 @@ A fully local, privacy-first AI agent for Android that runs entirely on-device.
 | 9 Android tools + permissions | Working |
 | Multi-agent (Planner/Executor/Critic) | Working |
 | Voice in/out | Working |
-| Vision (Moondream2) | Working — mtmd statically linked in `libnative_llama.so`, reachable from the composer |
+| Vision | **Fixed in this build** — mtmd is statically linked and the catalogue now offers **Qwen3.5 0.8B**, a model with vision built in. The previous entry, Moondream2, **could never load**: the vendored llama.cpp has no encoder for its projector. See `docs/MODEL_SUPPORT.md`. |
 | **GPU acceleration (Vulkan)** | **Working** — `libggml-vulkan.so` (47 MB) shipped, exports `ggml_backend_vk_reg`, links `libvulkan.so`. Runtime CPU fallback. |
 | Cloud models (BYOK) | Working — 12 providers, keys in the hardware keystore |
 | Local/cloud router | Working — on-device by default, rule-based escalation |
@@ -23,7 +23,7 @@ A fully local, privacy-first AI agent for Android that runs entirely on-device.
 | Document ingestion | Working — PDF, DOCX, plain text |
 | At-rest encryption + biometric lock | Working — AES-GCM, key in the keystore |
 | NPU acceleration | **Not used, and not claimed** — no portable backend exists; the app names the NPU it detects |
-| Verified on a physical device | **Partially** — v1.1.0 ran on real hardware (which is how the hang was found); v1.2.0 and v1.3.0 have not |
+| Verified on a physical device | **Partially** — v1.1.0 and v1.3.0 have both run on real hardware (that is how the infinite-"Thinking…" hang and the broken vision path were found). Nothing in *this* build has been run on a phone yet. |
 
 ## Performance and the GPU
 
@@ -80,7 +80,8 @@ Pick one in **Settings → Models**; the app downloads it with live progress.
 | Qwen2.5-0.5B-Instruct Q4_K_M | ~397 MB | ~600 MB | default, good tool-calling |
 | SmolLM2-360M-Instruct Q8_0 | ~386 MB | ~550 MB | fastest |
 | Qwen2.5-1.5B-Instruct Q4_K_M | ~1.12 GB | ~1.4 GB | best quality |
-| Moondream2 q5_k + mmproj | ~1.6 GB | ~1.6 GB | image understanding |
+| **Qwen3.5-0.8B Q4_K_M + mmproj-F16** | **~703 MB** | ~1.1 GB | **vision — reads images natively** |
+| Moondream2 q5_k + mmproj | ~1.97 GB | ~2.4 GB | ⚠️ **listed but disabled** — this build's llama.cpp has no encoder for its projector, so it can never load |
 
 > **Needle (Cactus) is not supported.** It ships as `.cact` + `.safetensors` with its own
 > native runtime (`libneedle.a`), not GGUF, so it cannot be loaded through llama.cpp.

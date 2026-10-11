@@ -116,6 +116,21 @@ const Map<String, ModelIntegrity> modelIntegrityManifest = {
       ),
     },
   ),
+  // Qwen3.5 0.8B — the vision model that actually loads. Pin read from the
+  // Hugging Face tree API at this exact commit; the LFS `oid` is the SHA-256.
+  'qwen3.5-0.8b-q4_k_m': ModelIntegrity(
+    commitSha: '6ab461498e2023f6e3c1baea90a8f0fe38ab64d0',
+    files: {
+      'Qwen3.5-0.8B-Q4_K_M.gguf': FileIntegrity(
+        532517120,
+        'bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517',
+      ),
+      'mmproj-F16.gguf': FileIntegrity(
+        204987232,
+        '56e4c6cfe73b0c82e3e82bc518d7591997e61d81f723fc41a586f4fa69ea2453',
+      ),
+    },
+  ),
   'moondream2-q5k': ModelIntegrity(
     commitSha: '8abde7e79de0c3bbbfeb29827ef594f36bc5fe67',
     files: {

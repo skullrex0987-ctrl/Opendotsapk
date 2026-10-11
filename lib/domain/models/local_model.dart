@@ -46,6 +46,12 @@ class LocalModel {
   /// Rough RAM needed at runtime, for display.
   final String ramHint;
 
+  /// Non-null when this build genuinely cannot serve the model — for example
+  /// when the vendored llama.cpp has no vision encoder for its projector.
+  /// The UI greys the row out and says why, instead of letting the user
+  /// download gigabytes that are guaranteed never to load.
+  final String? unsupportedReason;
+
   const LocalModel({
     required this.id,
     required this.displayName,
@@ -60,6 +66,7 @@ class LocalModel {
     this.minBytes = 1024 * 1024,
     this.contextSize = 2048,
     this.ramHint = '',
+    this.unsupportedReason,
   });
 
   bool get isVision => kind == ModelKind.vision;
@@ -121,23 +128,53 @@ class ModelCatalog {
     ramHint: '~1.4 GB',
   );
 
-  // ----------------------------------------------------------- vision model
+  // ---------------------------------------------------------- vision models
+  //
+  // Qwen3.5 has vision **built in**. One GGUF carries the language model and
+  // its ViT, and the matching `mmproj` supplies the merger — it is not a text
+  // brain with a projector bolted onto the side. The vendored llama.cpp
+  // registers its arch as `qwen35` and its encoder as `qwen3vl_merger`, both
+  // of which are present in this build.
+  //
+  // Size/hash pins were read from the Hugging Face tree API (the LFS `oid` is
+  // the SHA-256), not typed by hand.
+  static const LocalModel qwen35_08b = LocalModel(
+    id: 'qwen3.5-0.8b-q4_k_m',
+    displayName: 'Qwen3.5 0.8B (vision)',
+    description: 'Sees images natively and chats. One download, no separate '
+        'projector pass.',
+    kind: ModelKind.vision,
+    fileName: 'Qwen3.5-0.8B-Q4_K_M.gguf',
+    url: 'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf',
+    // 532,517,120 B weights + 204,987,232 B mmproj = 737,504,352 B.
+    approxBytes: 737504352,
+    projectorFileName: 'mmproj-F16.gguf',
+    projectorUrl: 'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/mmproj-F16.gguf',
+    contextSize: 4096,
+    ramHint: '~1.1 GB',
+  );
+
+  /// Documented-but-disabled. Kept in the catalogue so the limitation is
+  /// explained rather than the entry silently vanishing, but **never
+  /// selectable**: the vendored llama.cpp `projector_type` enum has no
+  /// `moondream` member at all, so `initVision()` fails on this projector and
+  /// the app reports "vision failed to attach". That is a hard runtime
+  /// limitation — no amount of re-downloading can fix it.
   static const LocalModel moondream2 = LocalModel(
     id: 'moondream2-q5k',
-    displayName: 'Moondream2 (vision)',
-    description: 'Image understanding. Runs on the CPU backend, so expect '
-        'slow first-token latency on a phone.',
+    displayName: 'Moondream2 (unsupported)',
+    description: 'Image understanding with a separate CLIP projector.',
     kind: ModelKind.vision,
     fileName: 'moondream2-050824-q5k.gguf',
     url: 'https://huggingface.co/cjpais/moondream2-llamafile/resolve/main/moondream2-050824-q5k.gguf',
-    // Weights 1,059,610,016 B + mmproj 909,777,984 B = 1,969,388,000 B. The
-    // old 1.3 GB figure counted only the weights, so the download never had
-    // room reserved for the projector half.
+    // Weights 1,059,610,016 B + mmproj 909,777,984 B = 1,969,388,000 B.
     approxBytes: 1969388000,
     projectorFileName: 'moondream2-mmproj-050824-f16.gguf',
     projectorUrl: 'https://huggingface.co/cjpais/moondream2-llamafile/resolve/main/moondream2-mmproj-050824-f16.gguf',
     contextSize: 2048,
     ramHint: '~2.4 GB',
+    unsupportedReason: 'llama.cpp has no Moondream2 vision encoder, so this '
+        'projector cannot load on any phone. Use Qwen3.5 0.8B instead.',
   );
 
   /// --------------------------------------------------------- embedding model
@@ -170,7 +207,11 @@ class ModelCatalog {
   static const List<LocalModel> llms = [qwen05b, smolLm2_360m, qwen15b];
 
   /// Models the user can pick for image understanding.
-  static const List<LocalModel> visionModels = [moondream2];
+  ///
+  /// Qwen3.5 leads: it is the only entry whose vision actually loads in this
+  /// build. Moondream2 stays listed but disabled so the reason is visible
+  /// instead of the option mysteriously disappearing.
+  static const List<LocalModel> visionModels = [qwen35_08b, moondream2];
 
   /// Models the user can pick for memory/retrieval.
   static const List<LocalModel> embeddingModels = [miniLm6];
@@ -179,6 +220,7 @@ class ModelCatalog {
     qwen05b,
     smolLm2_360m,
     qwen15b,
+    qwen35_08b,
     moondream2,
     miniLm6,
   ];
@@ -194,10 +236,15 @@ class ModelCatalog {
   /// Default chat model (smallest that still does tool calls well).
   static const LocalModel defaultLlm = qwen05b;
 
-  /// Whether this build can actually serve [m]. Kept as a function rather
-  /// than hardcoded so a binding swap that drops mtmd can disable vision here
-  /// instead of letting the user download 1.3 GB that never loads.
-  static bool isUsable(LocalModel m) => true;
+  /// Whether this build can actually serve [m].
+  ///
+  /// Driven by [LocalModel.unsupportedReason] so a model whose runtime support
+  /// is missing is greyed out and explained, rather than letting the user
+  /// download gigabytes that can never load.
+  static bool isUsable(LocalModel m) => m.unsupportedReason == null;
+
+  /// The vision model a fresh install should pick.
+  static const LocalModel defaultVision = qwen35_08b;
 
   /// Deliberately unsupported, documented so the UI can explain why.
   static const String needleNote =

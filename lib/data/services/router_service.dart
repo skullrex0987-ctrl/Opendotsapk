@@ -10,8 +10,8 @@
 ///  2. Offline                            -> local.
 ///  3. Private mode on                    -> local, always.
 ///  4. Turn contains images but the local vision model is not loaded
-///     -> cloud, if a vision-capable provider exists. Otherwise local and we
-///     say so rather than pretending.
+///     -> cloud, if a vision-capable provider exists. Otherwise refused: no
+///     model is ever asked to answer a question it cannot actually receive.
 ///
 /// Soft rules (scored):
 ///  * Long inputs, code, and explicit "think hard" phrasing push to cloud.
@@ -24,7 +24,7 @@ import 'dart:io';
 import '../../core/utils/log.dart';
 import '../../domain/models/cloud_provider.dart';
 
-enum RouteTarget { local, cloud }
+enum RouteTarget { local, cloud, refused }
 
 class RouteDecision {
   final RouteTarget target;
@@ -47,6 +47,13 @@ class RouteDecision {
   });
 
   bool get isCloud => target == RouteTarget.cloud;
+
+  /// True when the turn cannot be served honestly by anything available.
+  ///
+  /// The caller must surface [reason] and **not** invoke a model. Sending an
+  /// image to a text-only model produces a confident answer to a question that
+  /// was never actually asked.
+  bool get isRefused => target == RouteTarget.refused;
 
   static const localDefault = RouteDecision(
     target: RouteTarget.local,
@@ -196,10 +203,14 @@ class RouterService {
           forced: true,
         );
       }
-      // No vision anywhere: be explicit instead of silently dropping the image.
+      // No vision anywhere. Refuse: answering would mean asking a model that
+      // never saw the picture, which is how "I didn't understand your question"
+      // gets returned for a question that was perfectly clear.
       return const RouteDecision(
-        target: RouteTarget.local,
-        reason: 'Image attached, but no vision model is available',
+        target: RouteTarget.refused,
+        reason: 'This message has an image, but no vision model is loaded, so '
+            'nothing can actually look at it. Load a vision model in '
+            'Settings → Models, then send again.',
         forced: true,
       );
     }

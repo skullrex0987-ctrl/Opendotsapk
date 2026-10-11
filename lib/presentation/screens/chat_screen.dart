@@ -22,6 +22,7 @@ import '../../data/services/model_manager.dart';
 import '../../data/services/embedding_service.dart';
 import '../../data/services/router_service.dart';
 import '../widgets/biometric_gate.dart';
+import '../../domain/models/local_model.dart';
 import '../../domain/models/models.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
@@ -510,6 +511,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       return;
     }
 
+    if (decision.isRefused) {
+      // Say why, in the transcript, and stop. Calling a model here would mean
+      // returning a confident answer to a question it was never shown.
+      Log.w('turn refused: ${decision.reason}');
+      await ref.read(chatMessagesProvider.notifier).addMessage(
+            ChatMessage(
+              id: _uuid.v4(),
+              role: 'assistant',
+              content: decision.reason,
+              timestamp: DateTime.now().millisecondsSinceEpoch,
+            ),
+          );
+      if (mounted) _scrollToBottom();
+      return;
+    }
+
     if (!llmService.isLoaded) {
       await _showModelNotLoadedDialog();
       return;
@@ -879,44 +896,30 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 }
 
-/// Model selector dialog
+/// Model Management sheet.
+///
+/// Shows what is **actually in memory** next to what is **selected**. Those two
+/// drifting apart is exactly how a downloaded vision model ends up never being
+/// used: the user picks it, never re-taps Load, and every later image is
+/// silently discarded.
 class ModelSelectorDialog extends ConsumerWidget {
   const ModelSelectorDialog({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final settings = ref.watch(settingsProvider);
-    
     return AlertDialog(
       title: const Text('Model Management'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            leading: const Icon(Icons.download),
-            title: const Text('Load Selected Model'),
-            subtitle: const Text('Qwen2.5-1.5B-Instruct Q4_K_M'),
-            onTap: () => _loadSelectedModels(context, ref),
-          ),
-          const Divider(),
-          ListTile(
-            leading: const Icon(Icons.upload_file),
-            title: const Text('Load from Storage'),
-            subtitle: const Text('Select a GGUF file'),
-            onTap: () => _loadModelFromStorage(context, ref),
-          ),
-          if (settings['model_path'] != null) ...[
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.check_circle),
-              title: Text('Current: ${settings['model_path']}'),
-              subtitle: const Text('Model is loaded'),
-            ),
-          ],
-        ],
-      ),
+      content: const _ModelPickerBody(),
       actions: [
         TextButton(
+          onPressed: () => _loadModelFromStorage(context, ref),
+          child: const Text('From storage'),
+        ),
+        TextButton(
+          onPressed: () => _loadSelectedModels(context, ref),
+          child: const Text('Load'),
+        ),
+        FilledButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('Close'),
         ),
@@ -973,7 +976,8 @@ class ModelSelectorDialog extends ConsumerWidget {
         if (projector != null) {
           final visionOk = await llmService.loadVision(projector);
           if (!visionOk) {
-            message = '${chat.displayName} loaded, but vision failed to attach.';
+            message = '${chat.displayName} loaded, but vision failed to attach.'
+                '${llmService.lastVisionError == null ? '' : ' ${llmService.lastVisionError}'}';
           }
         }
       }
@@ -1057,6 +1061,191 @@ class ModelSelectorDialog extends ConsumerWidget {
         SnackBar(content: Text('Could not load that file: $e')),
       );
     }
+  }
+}
+
+/// The picker inside [ModelSelectorDialog].
+///
+/// Watches the live selection *and* the live "what is in memory" setting, so the
+/// two can be compared on screen. Selecting a model here only changes what will
+/// be loaded — it does not hot-swap the runtime — which is precisely why the
+/// mismatch warning matters.
+class _ModelPickerBody extends ConsumerStatefulWidget {
+  const _ModelPickerBody();
+
+  @override
+  ConsumerState<_ModelPickerBody> createState() => _ModelPickerBodyState();
+}
+
+class _ModelPickerBodyState extends ConsumerState<_ModelPickerBody> {
+  final ModelManager _manager = ModelManager.getInstance();
+
+  String? _llmId;
+  String? _visionId;
+  String? _embeddingId;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    final List<String?> ids = await Future.wait<String?>([
+      _manager.activeLlmId(),
+      _manager.activeVisionId(),
+      _manager.activeEmbeddingId(),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      _llmId = ids[0];
+      _visionId = ids[1];
+      _embeddingId = ids[2];
+    });
+  }
+
+  String? _selectedId(ModelKind kind) {
+    switch (kind) {
+      case ModelKind.llm:
+        return _llmId;
+      case ModelKind.vision:
+        return _visionId;
+      case ModelKind.embedding:
+        return _embeddingId;
+    }
+  }
+
+  Future<void> _choose(LocalModel m) async {
+    switch (m.kind) {
+      case ModelKind.llm:
+        await _manager.setActiveLlmId(m.id);
+        break;
+      case ModelKind.vision:
+        await _manager.setActiveVisionId(m.id);
+        break;
+      case ModelKind.embedding:
+        await _manager.setActiveEmbeddingId(m.id);
+        break;
+    }
+    await _refresh();
+  }
+
+  List<LocalModel> _catalog(ModelKind kind) {
+    switch (kind) {
+      case ModelKind.llm:
+        return ModelCatalog.llms;
+      case ModelKind.vision:
+        return ModelCatalog.visionModels;
+      case ModelKind.embedding:
+        return ModelCatalog.embeddingModels;
+    }
+  }
+
+  Widget _row(LocalModel m) {
+    final usable = ModelCatalog.isUsable(m);
+    final selected = _selectedId(m.kind) == m.id;
+
+    return FutureBuilder<bool>(
+      future: _manager.isInstalled(m),
+      builder: (context, snap) {
+        final installed = snap.data ?? false;
+        final tappable = usable && installed;
+        return ListTile(
+          dense: true,
+          enabled: tappable,
+          leading: Icon(
+            !usable
+                ? Icons.block
+                : (selected
+                    ? Icons.radio_button_checked
+                    : Icons.radio_button_unchecked),
+            size: 20,
+            color: selected ? Theme.of(context).colorScheme.primary : null,
+          ),
+          title: Text(m.displayName),
+          subtitle: Text(
+            !usable
+                ? (m.unsupportedReason ?? 'Not supported by this build')
+                : '${m.sizeLabel}  ·  '
+                    '${installed ? 'downloaded' : 'not downloaded'}',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color:
+                      usable ? null : Theme.of(context).colorScheme.error,
+                ),
+          ),
+          onTap: tappable ? () => _choose(m) : null,
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Watched rather than read: `_loadSelectedModels` writes `model_path` when
+    // it finishes, and this row has to update the moment it does.
+    final path = ref.watch(settingsProvider)['model_path'] as String?;
+    final loaded = (path == null || path.isEmpty)
+        ? null
+        : path.substring(path.lastIndexOf('/') + 1);
+
+    final selectedLlm = _llmId == null ? null : ModelCatalog.byId(_llmId);
+    // Selected-but-not-loaded is the exact failure that produced "vision failed
+    // to attach" with no explanation: the files are on disk, the user believes
+    // they are in use, and they are not.
+    final stale =
+        loaded != null && selectedLlm != null && loaded != selectedLlm.fileName;
+
+    return SizedBox(
+      width: double.maxFinite,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ListTile(
+              dense: true,
+              leading: Icon(
+                loaded == null ? Icons.memory : Icons.check_circle,
+                color: loaded == null ? null : Colors.green,
+              ),
+              title: Text(loaded ?? 'Nothing loaded'),
+              subtitle: Text(
+                loaded == null
+                    ? 'Tap Load to bind the selected models'
+                    : 'Currently in memory',
+              ),
+            ),
+            if (stale)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text(
+                  'The file in memory is not the model selected below. '
+                  'Tap Load to switch.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                ),
+              ),
+            const Divider(),
+            ..._section(context, 'Chat model', ModelKind.llm),
+            const Divider(),
+            ..._section(context, 'Vision model', ModelKind.vision),
+            const Divider(),
+            ..._section(context, 'Embeddings', ModelKind.embedding),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _section(BuildContext context, String title, ModelKind kind) {
+    return [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+        child: Text(title, style: Theme.of(context).textTheme.labelLarge),
+      ),
+      ..._catalog(kind).map(_row),
+    ];
   }
 }
 

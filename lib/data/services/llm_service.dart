@@ -37,6 +37,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:native_llama/native_llama.dart';
 
+import '../../core/utils/log.dart';
 import '../../domain/models/local_model.dart';
 
 /// How long a generation may go without producing a single token before it is
@@ -141,6 +142,13 @@ class LlmService {
     }
   }
 
+  /// Why the last [loadVision] call failed, or null if it never has.
+  ///
+  /// The chat screen shows this instead of a bare "vision failed to attach",
+  /// so the user gets an actual cause rather than having to guess.
+  String? get lastVisionError => _lastVisionError;
+  String? _lastVisionError;
+
   /// Load the mmproj projector that makes a vision model usable.
   ///
   /// Kept separate from [loadModel] because the projector belongs to the vision
@@ -150,12 +158,18 @@ class LlmService {
       await _llm.initVision(mmprojPath);
       _visionProjectorPath = mmprojPath;
       _isVisionLoaded = true;
-      debugPrint('[LlmService] vision projector loaded: $mmprojPath');
+      _lastVisionError = null;
+      Log.i('[LlmService] vision projector loaded: $mmprojPath');
       return true;
     } catch (e) {
-      onError?.call('Failed to load vision projector: $e');
       _isVisionLoaded = false;
       _visionProjectorPath = null;
+      // The plugin's own failure text is the only real diagnostic here, so it
+      // must reach the log and the UI rather than being replaced by a generic
+      // message.
+      _lastVisionError = 'Vision projector failed: $e';
+      Log.e('$_lastVisionError (path: $mmprojPath)');
+      onError?.call(_lastVisionError!);
       return false;
     }
   }
@@ -187,8 +201,10 @@ class LlmService {
 
   /// Stream generated tokens one at a time.
   ///
-  /// Pass [imagePath] to feed a picture to a vision model — requires
-  /// [isVisionLoaded], otherwise the image is silently dropped by the plugin.
+  /// Pass [imagePath] to feed a picture to a vision model. This **requires**
+  /// [isVisionLoaded]. When it is false we throw instead of proceeding, because
+  /// the plugin drops unsupported media silently and the model will then answer
+  /// a question it never actually received.
   ///
   /// Stops early once [maxTokens] tokens have been emitted, because the native
   /// loop has no upper bound of its own.
@@ -209,6 +225,17 @@ class LlmService {
     if (!_llm.isInitialized) {
       throw StateError(
         'The native model is not initialised. Reload the model and try again.',
+      );
+    }
+
+    // Never let a picture disappear. The plugin discards media when no
+    // projector is attached, which yields a confident answer to a question the
+    // model never actually received.
+    if (imagePath != null && !_isVisionLoaded) {
+      throw StateError(
+        'Cannot send an image: no vision projector is loaded. The picture '
+        'would be dropped and the model would answer as if it had seen '
+        'nothing. Load a vision model first.',
       );
     }
 

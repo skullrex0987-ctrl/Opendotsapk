@@ -5,9 +5,10 @@
 /// because the three roles are genuinely different:
 ///
 ///   Chat       one GGUF brain. You need exactly one.
-///   Vision     a GGUF + its mmproj projector, loaded on top of the brain.
-///              Only Moondream2 is offered because it is the only small GGUF
-///              whose projector llama.cpp can actually serve on-device.
+///   Vision     a vision-capable GGUF + its mmproj. Qwen3.5 carries its own
+///              ViT, so a single download both chats and sees. Moondream2
+///              stays listed but disabled: this build of llama.cpp has no
+///              encoder for its projector, so it can never load.
 ///   Embeddings an ONNX encoder + vocab.txt that backs Memory search.
 ///              Optional, but Memory silently does nothing without it.
 library;
@@ -171,10 +172,9 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
           const Divider(height: 32),
           const _SectionHeader(
             title: 'Vision model',
-            subtitle: 'Lets the agent read pictures. Loaded on top of the chat '
-                'model. Moondream2 is the only small GGUF llama.cpp can serve '
-                'on-device; Needle is excluded because it needs the Cactus '
-                'native runtime, not llama.cpp.',
+            subtitle: 'Lets the agent read pictures. Qwen3.5 has vision built '
+                'in, so one download is enough — it chats and sees. Any entry '
+                'greyed out is not supported by this build\'s llama.cpp.',
           ),
           ...ModelCatalog.visionModels.map(
             (m) => _row(m, selectedId: _activeVision, usable: ModelCatalog.isUsable(m)),
@@ -231,6 +231,15 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
                       color: Theme.of(context).colorScheme.outline,
                     ),
               ),
+              if (m.unsupportedReason != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  m.unsupportedReason!,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                ),
+              ],
               if (busy && progress != null) ...[
                 const SizedBox(height: 6),
                 LinearProgressIndicator(value: progress),

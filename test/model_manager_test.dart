@@ -382,6 +382,24 @@ void main() {
       expect(ModelCatalog.moondream2.approxBytes, total);
     });
 
+    test('qwen3.5 size covers weights and projector', () {
+      final integrity = integrityFor(ModelCatalog.qwen35_08b)!;
+      final total =
+          integrity.files.values.fold<int>(0, (a, f) => a + f.size);
+      // 532,517,120 weights + 204,987,232 mmproj
+      expect(total, 737504352);
+      expect(ModelCatalog.qwen35_08b.approxBytes, total);
+    });
+
+    test('qwen3.5 is pinned to an immutable commit, not main', () {
+      final integrity = integrityFor(ModelCatalog.qwen35_08b)!;
+      expect(isImmutableCommitSha(integrity.commitSha), isTrue);
+      expect(
+        integrity.commitSha,
+        '6ab461498e2023f6e3c1baea90a8f0fe38ab64d0',
+      );
+    });
+
     test('every manifest entry keys back to a real catalog file', () {
       // Guards against a rename leaving an orphan manifest entry behind.
       for (final m in ModelCatalog.all) {
