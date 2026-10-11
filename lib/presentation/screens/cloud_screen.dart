@@ -19,6 +19,91 @@ import '../../data/services/secure_store.dart';
 import '../../domain/models/cloud_provider.dart';
 import '../providers/providers.dart';
 
+/// True when [host] names this device or the local network, so that a
+/// plaintext `http://` request to it cannot be read off the public internet.
+///
+/// Covers loopback (`localhost`, `127.0.0.0/8`, `::1`), the RFC1918 private
+/// ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), the link-local
+/// range (`169.254.0.0/16`) and mDNS `.local` names. The emulator host
+/// `10.0.2.2` falls inside `10.0.0.0/8` and is therefore allowed too.
+///
+/// This is the app-level half of the cleartext policy. Android's
+/// network_security_config can only whitelist named hosts, not CIDR ranges, so
+/// the private IP-literal ranges are enforced here and not there.
+///
+/// A pure function of its string argument, so it can be unit-tested without a
+/// widget or an Android host.
+bool isLocalHost(String host) {
+  var h = host.trim().toLowerCase();
+  // Uri.host already strips the brackets from an IPv6 literal; be defensive.
+  if (h.length > 1 && h.startsWith('[') && h.endsWith(']')) {
+    h = h.substring(1, h.length - 1);
+  }
+  if (h == 'localhost' || h == '::1') return true;
+  if (h.endsWith('.local')) return true; // mDNS, e.g. mybox.local
+
+  final octets = _parseIpv4(h);
+  if (octets == null) return false;
+  final a = octets[0];
+  final b = octets[1];
+  if (a == 127) return true; // 127.0.0.0/8 loopback
+  if (a == 10) return true; // 10.0.0.0/8
+  if (a == 192 && b == 168) return true; // 192.168.0.0/16
+  if (a == 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12
+  if (a == 169 && b == 254) return true; // 169.254.0.0/16 link-local
+  return false;
+}
+
+/// True only for a plaintext `http://` URL whose host is local (see
+/// [isLocalHost]). Every other input — https, http to a public host, or
+/// malformed — returns false.
+///
+/// Exposed as a pure function so the allowlist rule can be unit-tested later
+/// without a widget test.
+bool isLocalHttpHostAllowed(String url) {
+  final uri = Uri.tryParse(url.trim());
+  if (uri == null || uri.scheme.toLowerCase() != 'http') return false;
+  return isLocalHost(uri.host);
+}
+
+/// Validates a base-URL field value. Returns null when it may be stored, or a
+/// message explaining why it may not.
+///
+/// An empty value is allowed: it means "use the provider default". `https` is
+/// always allowed. `http` is allowed only for local hosts, because an API key
+/// or prompt sent over plaintext http to a public host can be read on the
+/// network. This is the guard that stops a user from turning a public endpoint
+/// into a cleartext one.
+String? baseUrlValidationError(String url) {
+  final trimmed = url.trim();
+  if (trimmed.isEmpty) return null;
+  final uri = Uri.tryParse(trimmed);
+  if (uri == null || uri.scheme.isEmpty || uri.host.isEmpty) {
+    return 'Enter a full URL including the scheme, e.g. https://host/v1.';
+  }
+  final scheme = uri.scheme.toLowerCase();
+  if (scheme == 'https') return null;
+  if (scheme != 'http') return 'Only http and https URLs are supported.';
+  if (isLocalHost(uri.host)) return null;
+  return 'Plaintext http:// is allowed only for a local endpoint. Use '
+      'https:// — an API key sent over http could be read on the network.';
+}
+
+/// Splits a dotted-decimal IPv4 string into four octets, or null if it is not
+/// a well-formed IPv4 literal. Kept private; only [isLocalHost] uses it.
+List<int>? _parseIpv4(String host) {
+  final parts = host.split('.');
+  if (parts.length != 4) return null;
+  final out = <int>[];
+  for (final part in parts) {
+    if (part.isEmpty) return null;
+    final n = int.tryParse(part);
+    if (n == null || n < 0 || n > 255) return null;
+    out.add(n);
+  }
+  return out;
+}
+
 class CloudModelsScreen extends ConsumerStatefulWidget {
   const CloudModelsScreen({super.key});
 
@@ -283,6 +368,13 @@ class _CloudProviderScreenState extends ConsumerState<CloudProviderScreen> {
         ? settings['active_cloud_model'] as String?
         : null;
 
+    // Live base-URL validation, recomputed on every keystroke (the field's
+    // onChanged calls setState). An empty value means "provider default".
+    final baseUrlText = _baseUrlController.text.trim();
+    final baseUrlError = baseUrlValidationError(baseUrlText);
+    final showsLocalHttpWarning =
+        baseUrlError == null && isLocalHttpHostAllowed(baseUrlText);
+
     return Scaffold(
       appBar: AppBar(title: Text(widget.provider.displayName)),
       body: ListView(
@@ -371,11 +463,34 @@ class _CloudProviderScreenState extends ConsumerState<CloudProviderScreen> {
                     const SizedBox(height: 8),
                     TextField(
                       controller: _baseUrlController,
-                      decoration: const InputDecoration(
-                        border: OutlineInputBorder(),
+                      onChanged: (_) => setState(() {}),
+                      keyboardType: TextInputType.url,
+                      decoration: InputDecoration(
+                        border: const OutlineInputBorder(),
                         hintText: 'https://host/v1',
+                        errorText: baseUrlError,
+                        errorMaxLines: 3,
                       ),
                     ),
+                    if (showsLocalHttpWarning) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.warning_amber_rounded,
+                              size: 16, color: Colors.amber[400]),
+                          const SizedBox(width: 6),
+                          const Expanded(
+                            child: Text(
+                              'Local http:// endpoint. Traffic to this host is '
+                              'not encrypted, but it stays on your network. '
+                              'Anything off this network must use https://.',
+                              style: TextStyle(fontSize: 11),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                     const SizedBox(height: 8),
                     const Text(
                       'For a LAN server this must be reachable from the phone.',
@@ -385,7 +500,8 @@ class _CloudProviderScreenState extends ConsumerState<CloudProviderScreen> {
                     Align(
                       alignment: Alignment.centerRight,
                       child: TextButton(
-                        onPressed: _saveBaseUrl,
+                        onPressed:
+                            baseUrlError == null ? _saveBaseUrl : null,
                         child: const Text('Save URL'),
                       ),
                     ),
@@ -421,6 +537,17 @@ class _CloudProviderScreenState extends ConsumerState<CloudProviderScreen> {
   Future<void> _saveKey() async {
     final key = _keyController.text.trim();
     if (key.isEmpty) return;
+
+    // (d) Never store a key that would be sent to a plaintext, non-local
+    // endpoint. The base URL in force is exactly where this key will go, so
+    // validate it before anything is written to the keystore.
+    final baseUrl = await _effectiveBaseUrl();
+    if (!mounted) return;
+    final urlError = baseUrlValidationError(baseUrl);
+    if (urlError != null) {
+      setState(() => _status = 'Key not saved. $urlError');
+      return;
+    }
 
     // Catch the most common mistake: pasting the wrong provider's key.
     final hint = widget.provider.keyHint;
@@ -480,16 +607,36 @@ class _CloudProviderScreenState extends ConsumerState<CloudProviderScreen> {
   }
 
   Future<void> _saveBaseUrl() async {
+    final url = _baseUrlController.text.trim();
+    // Belt-and-braces: the Save button is already disabled while the field is
+    // invalid, but never persist a URL that failed validation.
+    final error = baseUrlValidationError(url);
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error)),
+      );
+      return;
+    }
     final cfg = Map<String, String>.from(
       await SecureStore.instance.providerConfig(widget.provider.id),
     );
-    cfg['baseUrl'] = _baseUrlController.text.trim();
+    cfg['baseUrl'] = url;
     await SecureStore.instance.setProviderConfig(widget.provider.id, cfg);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Base URL saved.')),
     );
     _refreshRouter();
+  }
+
+  /// The base URL the provider will actually be dialed at: whatever is typed
+  /// in the field now, else the saved config, else the provider default. Used
+  /// to validate that a key is not about to be sent in the clear.
+  Future<String> _effectiveBaseUrl() async {
+    final typed = _baseUrlController.text.trim();
+    if (typed.isNotEmpty) return typed;
+    final cfg = await SecureStore.instance.providerConfig(widget.provider.id);
+    return cfg['baseUrl'] ?? widget.provider.defaultBaseUrl;
   }
 
   Future<void> _test() async {

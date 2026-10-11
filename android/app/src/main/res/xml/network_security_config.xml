@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Network security policy for LocalMind.
+
+  Cleartext (plain http) is OFF for every host by default. The previous
+  manifest set android:usesCleartextTraffic="true" app-wide, which meant a
+  base URL a user typed into the Cloud Models screen could send an API key
+  over the wire in the clear to any public host.
+
+  Cleartext is re-enabled only for endpoints that cannot leave this device or
+  the local network, so a local Ollama or a LAN MCP server on http still works.
+
+  Honest limitation: Android's network security config matches by DOMAIN NAME,
+  not by CIDR. The RFC1918 / link-local *IP-literal* spaces (10.0.0.0/8,
+  172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16) therefore cannot be expressed
+  here — and a rule like <domain>10.10.5.7</domain> would only ever whitelist
+  that one literal address. Those ranges are instead enforced by the app-level
+  check in lib/presentation/screens/cloud_screen.dart (isLocalHttpHostAllowed /
+  baseUrlValidationError), which is the real guard on what the app dials.
+-->
+<network-security-config>
+    <!-- Default for every host not listed below: HTTPS only. -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!-- Local endpoints only: these resolve to this device or the local
+         network, so plaintext cannot reach the public internet. -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <!-- 10.0.2.2 is the host machine as seen from the Android emulator. -->
+        <domain includeSubdomains="false">10.0.2.2</domain>
+        <!-- mDNS names such as "mybox.local". A leading dot is not valid in a
+             <domain> value, so the ".local" suffix space is expressed as the
+             "local" TLD with includeSubdomains="true": that matches
+             mybox.local, and does not match bar.localhost. -->
+        <domain includeSubdomains="true">local</domain>
+    </domain-config>
+</network-security-config>
