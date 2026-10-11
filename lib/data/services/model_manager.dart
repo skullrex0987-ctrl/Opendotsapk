@@ -2,17 +2,438 @@
 ///
 /// Models live under `<app documents>/models/`. Nothing is bundled in the APK;
 /// the user picks a model in Settings and the app streams it from Hugging Face
-/// with live progress. Safe to cancel mid-download (partial file is removed).
+/// with live progress.
+///
+/// ## Why this file is defensive
+///
+/// A 1.9 GB download (Moondream2 is 1.06 GB of weights plus a 0.91 GB
+/// projector) is a long, fragile thing to fetch on a phone. The old version
+/// deleted the partial file on *any* error, so a single socket drop — a lock
+/// screen, a lift ride — threw away everything and restarted from byte 0. That
+/// is the "Moondream2 downloads again and again" loop.
+///
+/// The rules now are:
+///   * every file is pinned to an immutable Hugging Face commit and carries an
+///     exact size and SHA-256 in a manifest;
+///   * an interrupted transfer KEEPS its `.part` file and its validators so the
+///     next run can resume with an HTTP `Range`;
+///   * a `.part` is only ever removed when it is provably wrong (bad checksum,
+///     stale revision, or a server that refused the range) — never merely
+///     because the network hiccuped;
+///   * only a file whose size and SHA-256 both match the manifest is promoted to
+///     its final name.
+///
+/// The decision logic (verification and resume planning) is deliberately kept
+/// in free functions at the top of the file so it can be unit-tested without a
+/// network, a device, or a real download.
+library;
+
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:cryptography/cryptography.dart';
+import 'package:cryptography/dart.dart' show DartHashAlgorithm, DartHashSink;
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/constants/app_constants.dart';
+import '../../core/utils/log.dart';
 import '../../domain/models/local_model.dart';
+
+// =============================================================== integrity model
+
+/// Expected size and content hash of a single downloadable file.
+class FileIntegrity {
+  /// Exact size in bytes. A mismatch means the transfer is truncated/extended
+  /// and the file must not be promoted.
+  final int size;
+
+  /// Lowercase hex SHA-256 of the complete file. Verified against the finished
+  /// `.part` before it is renamed into place.
+  final String sha256;
+
+  const FileIntegrity(this.size, this.sha256);
+}
+
+/// The immutable identity of a model's remote files: the Hugging Face commit
+/// they are pinned to, plus a per-file integrity entry.
+class ModelIntegrity {
+  /// 40-character lowercase hex commit. Pinning to a commit (rather than
+  /// `resolve/main`) means an upstream re-tag or force-push cannot silently
+  /// change the bytes we hash against.
+  final String commitSha;
+
+  /// Integrity entry per file name, matching [LocalModel.files].
+  final Map<String, FileIntegrity> files;
+
+  const ModelIntegrity({required this.commitSha, required this.files});
+}
+
+final RegExp _commitShaPattern = RegExp(r'^[0-9a-f]{40}$');
+final RegExp _sha256Pattern = RegExp(r'^[0-9a-f]{64}$');
+
+/// True when [sha] is a plausible immutable commit id (40 lowercase hex).
+bool isImmutableCommitSha(String sha) => _commitShaPattern.hasMatch(sha);
+
+/// Manifest of every downloadable file: pinned commit + exact size + SHA-256.
+///
+/// Sizes are exact byte counts and hashes are the content SHA-256, both read
+/// from the Hugging Face tree/LFS metadata at the pinned commit. `vocab.txt` is
+/// a plain (non-LFS) file, so its hash was computed directly rather than taken
+/// from an `lfs.oid`.
+///
+/// If a model is added to [ModelCatalog] and is not listed here, [download]
+/// refuses to fetch it — failing closed is the point: a model without a
+/// verified pin must not be downloaded from a mutable `main`.
+const Map<String, ModelIntegrity> modelIntegrityManifest = {
+  'qwen2.5-0.5b-instruct-q4_k_m': ModelIntegrity(
+    commitSha: '9217f5db79a29953eb74d5343926648285ec7e67',
+    files: {
+      'qwen2.5-0.5b-instruct-q4_k_m.gguf': FileIntegrity(
+        491400032,
+        '74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db',
+      ),
+    },
+  ),
+  'smollm2-360m-instruct-q8_0': ModelIntegrity(
+    commitSha: '593b5a2e04c8f3e4ee880263f93e0bd2901ad47f',
+    files: {
+      'smollm2-360m-instruct-q8_0.gguf': FileIntegrity(
+        386404992,
+        '48ab3034d0dd401fbc721eb1df3217902fee7dab9078992d66431f09b7750201',
+      ),
+    },
+  ),
+  'qwen2.5-1.5b-instruct-q4_k_m': ModelIntegrity(
+    commitSha: '91cad51170dc346986eccefdc2dd33a9da36ead9',
+    files: {
+      'qwen2.5-1.5b-instruct-q4_k_m.gguf': FileIntegrity(
+        1117320736,
+        '6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e',
+      ),
+    },
+  ),
+  'moondream2-q5k': ModelIntegrity(
+    commitSha: '8abde7e79de0c3bbbfeb29827ef594f36bc5fe67',
+    files: {
+      'moondream2-050824-q5k.gguf': FileIntegrity(
+        1059610016,
+        '17fd38418d407fca71b9eed817ae1ba9d602c891c67426a401d44149bd3db4a3',
+      ),
+      'moondream2-mmproj-050824-f16.gguf': FileIntegrity(
+        909777984,
+        '151e39246d5c80f215b4e7c73b913703055694239a3de4422005f78353e4e901',
+      ),
+    },
+  ),
+  'all-minilm-l6-v2': ModelIntegrity(
+    commitSha: '1110a243fdf4706b3f48f1d95db1a4f5529b4d41',
+    files: {
+      'minilm-l6-v2.onnx': FileIntegrity(
+        90405214,
+        '6fd5d72fe4589f189f8ebc006442dbb529bb7ce38f8082112682524616046452',
+      ),
+      'vocab.txt': FileIntegrity(
+        231508,
+        '07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3',
+      ),
+    },
+  ),
+};
+
+/// Integrity entry for [m], or null when the model is not pinned.
+ModelIntegrity? integrityFor(LocalModel m) => modelIntegrityManifest[m.id];
+
+/// Rewrites a Hugging Face `resolve/main` URL onto an immutable commit.
+///
+/// Throws [ArgumentError] when [commitSha] is not a 40-char hex commit, when
+/// the URL still points at `main`, or when it is not a resolvable HF URL. A
+/// throw is intentional: it is better to fail the download than to quietly
+/// fetch whatever `main` happens to be today.
+String pinToCommit(String url, String commitSha) {
+  if (!_commitShaPattern.hasMatch(commitSha)) {
+    throw ArgumentError.value(
+        commitSha, 'commitSha', 'must be a 40-char lowercase hex commit');
+  }
+  const marker = '/resolve/main/';
+  if (url.contains(marker)) {
+    return url.replaceFirst(marker, '/resolve/$commitSha/');
+  }
+  if (url.contains('/resolve/')) {
+    return url; // already pinned to a specific revision
+  }
+  throw ArgumentError.value(url, 'url', 'not a Hugging Face resolve URL');
+}
+
+// =============================================================== verification
+
+/// Why a finished `.part` was accepted or rejected.
+enum DownloadVerdict {
+  ok,
+
+  /// Zero bytes arrived — an "empty" 200 body or a fully-failed transfer.
+  empty,
+
+  /// Fewer bytes than the file's expected size (or than Content-Length).
+  truncated,
+
+  /// More bytes than expected; the manifest pin does not match the remote.
+  oversized,
+
+  /// The content hash does not match the manifest.
+  checksumMismatch,
+
+  /// The manifest has no usable SHA-256, so nothing can be trusted.
+  missingChecksum,
+
+  /// The manifest has no usable size, so nothing can be trusted.
+  badExpectedSize,
+}
+
+/// Typed result of [verifyDownload]. [message] is user-facing.
+class DownloadVerification {
+  final DownloadVerdict verdict;
+  final String message;
+
+  const DownloadVerification(this.verdict, this.message);
+
+  bool get ok => verdict == DownloadVerdict.ok;
+
+  @override
+  String toString() => 'DownloadVerification(${verdict.name}: $message)';
+}
+
+/// Decide whether a finished file may be promoted, from plain values only.
+///
+/// [receivedBytes] is the size of the complete finished `.part` (for a resumed
+/// download that is the *total* size, not just the bytes fetched this run).
+/// [contentLength] should be the server's Content-Length for a response that
+/// carried the whole file, or null when it is unknown or describes only a
+/// partial (206) body.
+///
+/// This is pure on purpose: the same decision the downloader makes is the one
+/// the tests exercise, with no I/O in between.
+DownloadVerification verifyDownload({
+  required int receivedBytes,
+  required int expectedSize,
+  required String? expectedSha256,
+  required String? actualSha256,
+  int? contentLength,
+}) {
+  if (receivedBytes <= 0) {
+    return const DownloadVerification(
+        DownloadVerdict.empty, 'no bytes were received');
+  }
+  if (expectedSize <= 0) {
+    return const DownloadVerification(
+        DownloadVerdict.badExpectedSize, 'provider has no expected size');
+  }
+  final expected = expectedSha256?.toLowerCase();
+  if (expected == null || !_sha256Pattern.hasMatch(expected)) {
+    // Fail closed: without a pinned hash a "successful" download proves nothing.
+    return const DownloadVerification(
+        DownloadVerdict.missingChecksum, 'provider has no usable SHA-256');
+  }
+  // A server that promised N bytes and delivered fewer truncated the body.
+  if (contentLength != null &&
+      contentLength > 0 &&
+      receivedBytes != contentLength) {
+    return DownloadVerification(
+      DownloadVerdict.truncated,
+      'received $receivedBytes of a promised $contentLength bytes',
+    );
+  }
+  if (receivedBytes < expectedSize) {
+    return DownloadVerification(DownloadVerdict.truncated,
+        'received $receivedBytes of $expectedSize bytes');
+  }
+  if (receivedBytes > expectedSize) {
+    return DownloadVerification(DownloadVerdict.oversized,
+        'received $receivedBytes, more than the expected $expectedSize bytes');
+  }
+  final actual = actualSha256?.toLowerCase();
+  if (actual == null) {
+    return const DownloadVerification(
+        DownloadVerdict.checksumMismatch, 'checksum could not be computed');
+  }
+  if (actual != expected) {
+    return DownloadVerification(DownloadVerdict.checksumMismatch,
+        'SHA-256 mismatch (expected $expected, got $actual)');
+  }
+  return const DownloadVerification(DownloadVerdict.ok, 'ok');
+}
+
+// =============================================================== resume logic
+
+/// Compute the strongest validator available for an interrupted download.
+///
+/// An ETag is preferred over Last-Modified: a Last-Modified timestamp has
+/// one-second resolution and two different files can share it.
+String? resumeValidator({String? etag, String? lastModified}) {
+  final e = etag?.trim();
+  if (e != null && e.isNotEmpty) return e;
+  final l = lastModified?.trim();
+  if (l != null && l.isNotEmpty) return l;
+  return null;
+}
+
+/// What to do with a `.part` that already exists on disk.
+class ResumePlan {
+  /// First byte to request. Zero for a clean start.
+  final int startByte;
+
+  /// True when the partial must be discarded (or there is nothing to resume).
+  final bool restart;
+
+  /// Extra headers to send — `Range` and `If-Range` when resuming.
+  final Map<String, String> headers;
+
+  /// Why the plan turned out this way, for logs.
+  final String? reason;
+
+  const ResumePlan({
+    required this.startByte,
+    required this.restart,
+    this.headers = const {},
+    this.reason,
+  });
+
+  /// True when a byte range will be requested from an existing partial.
+  bool get isResume => !restart && startByte > 0;
+}
+
+/// Decide how to continue a download given the partial on disk and what we know
+/// about the server.
+///
+/// A resume is only attempted when it is *safe*: the server may serve ranges,
+/// the partial is smaller than the full file, and we hold a validator from the
+/// interrupted session so `If-Range` can detect an upstream revision change.
+/// Anything else restarts cleanly rather than splicing two different files.
+ResumePlan planResume({
+  required int existingBytes,
+  required int expectedSize,
+  bool? acceptRangesBytes,
+  String? storedEtag,
+  String? storedLastModified,
+  int? storedExpectedSize,
+}) {
+  if (existingBytes <= 0) {
+    return const ResumePlan(
+        startByte: 0, restart: true, reason: 'no partial file');
+  }
+  if (expectedSize > 0 && existingBytes >= expectedSize) {
+    // Nothing left to fetch, and the bytes still have to pass verification.
+    return const ResumePlan(
+        startByte: 0, restart: true, reason: 'partial already covers the file');
+  }
+  if (storedExpectedSize != null &&
+      expectedSize > 0 &&
+      storedExpectedSize != expectedSize) {
+    // The pinned size changed since the partial was written (a new manifest):
+    // the partial belongs to a different file, so start over.
+    return const ResumePlan(
+        startByte: 0, restart: true, reason: 'partial was for a different size');
+  }
+  if (acceptRangesBytes == false) {
+    return const ResumePlan(
+        startByte: 0,
+        restart: true,
+        reason: 'server does not advertise Accept-Ranges: bytes');
+  }
+  final validator = resumeValidator(
+    etag: storedEtag,
+    lastModified: storedLastModified,
+  );
+  if (validator == null) {
+    // Without a validator we cannot detect that the remote changed, so an
+    // append could stitch two revisions into one corrupt file.
+    return const ResumePlan(
+        startByte: 0, restart: true, reason: 'no stored validator');
+  }
+  return ResumePlan(
+    startByte: existingBytes,
+    restart: false,
+    reason: 'resume from byte $existingBytes',
+    headers: {
+      'Range': 'bytes=$existingBytes-',
+      // If the file changed since the partial was written, the server ignores
+      // the Range and answers 200 with the whole file — we then restart.
+      'If-Range': validator,
+    },
+  );
+}
+
+/// How to treat the response to a ranged request.
+enum RangeVerdict { resume, restart }
+
+/// Classify a response to a request that carried a `Range` header.
+///
+/// Only a 206 whose Content-Range starts exactly where we asked may be appended
+/// to the partial. A 200 (range ignored, or If-Range rejected a stale
+/// validator) or a 206 from a different offset means the partial cannot be
+/// trusted and the transfer must start over from zero.
+RangeVerdict interpretRangedGet({
+  required int statusCode,
+  required int requestedStart,
+  int? contentRangeStart,
+}) {
+  if (statusCode == 206 && contentRangeStart == requestedStart) {
+    return RangeVerdict.resume;
+  }
+  return RangeVerdict.restart;
+}
+
+// =============================================================== hashing
+
+String _toHex(List<int> bytes) =>
+    bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+
+/// SHA-256 of [bytes], lowercase hex.
+///
+/// Synchronous and dependency-light so it can be checked against the published
+/// NIST vectors in a unit test.
+String sha256HexOfBytes(List<int> bytes) {
+  final DartHashAlgorithm algorithm = Sha256().toSync();
+  final DartHashSink sink = algorithm.newHashSink();
+  sink.add(bytes);
+  sink.close();
+  return _toHex(sink.hashSync().bytes);
+}
+
+/// SHA-256 of a file, read in chunks, lowercase hex.
+///
+/// Uses the pure-Dart incremental sink (`Sha256().newHashSink()` buffers the
+/// whole input in memory; `toSync().newHashSink()` does not), so hashing a 1 GB
+/// GGUF verifies it without holding 1 GB of it in RAM.
+Future<String> sha256HexOfFile(String path) async {
+  final DartHashAlgorithm algorithm = Sha256().toSync();
+  final DartHashSink sink = algorithm.newHashSink();
+  await for (final chunk in File(path).openRead()) {
+    sink.add(chunk);
+  }
+  sink.close();
+  return _toHex(sink.hashSync().bytes);
+}
+
+// =============================================================== free space
+
+/// Returns free bytes on the volume holding [path], or null when unknown.
+typedef FreeSpaceProbe = Future<int?> Function(String path);
+
+/// Pluggable free-space probe; null means "cannot read free space here".
+///
+/// It is null by default: `dart:io` exposes per-file [FileStat] but not
+/// filesystem free space, and this project has no `statfs`-style package or
+/// MethodChannel for it. The pre-download check therefore logs the shortfall
+/// risk and proceeds rather than blocking every download on a value it cannot
+/// read. Supplying a real probe (from a future platform binding) enables the
+/// check; this is the one remaining gap in the download path.
+FreeSpaceProbe? freeSpaceProbe;
+
+// =============================================================== progress event
 
 /// Progress event emitted while downloading a model.
 class DownloadProgress {
@@ -48,6 +469,47 @@ class DownloadProgress {
   }
 }
 
+// =============================================================== part metadata
+
+/// Validators remembered alongside a `.part` so the next run can resume safely.
+class _PartMeta {
+  final String? etag;
+  final String? lastModified;
+  final bool? acceptRanges;
+  final int expectedSize;
+
+  const _PartMeta({
+    this.etag,
+    this.lastModified,
+    this.acceptRanges,
+    required this.expectedSize,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'etag': etag,
+        'last_modified': lastModified,
+        'accept_ranges': acceptRanges,
+        'expected_size': expectedSize,
+      };
+
+  static _PartMeta? fromJson(String raw) {
+    try {
+      final j = jsonDecode(raw) as Map<String, dynamic>;
+      return _PartMeta(
+        etag: j['etag'] as String?,
+        lastModified: j['last_modified'] as String?,
+        acceptRanges: j['accept_ranges'] as bool?,
+        expectedSize: (j['expected_size'] as num?)?.toInt() ?? 0,
+      );
+    } catch (_) {
+      // A corrupt sidecar just means "no validators" — restart cleanly.
+      return null;
+    }
+  }
+}
+
+// =============================================================== manager
+
 class ModelManager {
   static ModelManager? _instance;
   ModelManager._();
@@ -55,6 +517,15 @@ class ModelManager {
   static ModelManager getInstance() => _instance ??= ModelManager._();
 
   static const Duration _connectTimeout = Duration(seconds: 30);
+
+  /// No byte for this long aborts the transfer with a typed error instead of
+  /// hanging forever on a half-open socket. The `.part` is kept, so a retry
+  /// resumes rather than restarting.
+  static const Duration _inactivityTimeout = Duration(seconds: 45);
+
+  /// Headroom left free on top of the model size, so a download cannot fill the
+  /// volume to the last byte.
+  static const int _freeSpaceReserve = 64 * 1024 * 1024;
 
   /// Directory that holds all downloaded models.
   Future<Directory> modelsDir() async {
@@ -90,13 +561,24 @@ class ModelManager {
       };
 
   /// True when every file the model needs is present on disk and complete.
+  ///
+  /// When a manifest entry exists its exact size is authoritative (a file that
+  /// is the wrong size is not installed, however large it is); otherwise the
+  /// coarser per-file floor is used.
   Future<bool> isInstalled(LocalModel m) async {
     final floors = _floorsFor(m);
+    final integrity = integrityFor(m);
 
     for (final f in m.files) {
       final file = File(await pathForFile(f.name));
       if (!await file.exists()) return false;
-      if (await file.length() < (floors[f.name] ?? m.minBytes)) return false;
+      final len = await file.length();
+      final expected = integrity?.files[f.name]?.size;
+      if (expected != null) {
+        if (len != expected) return false;
+      } else if (len < (floors[f.name] ?? m.minBytes)) {
+        return false;
+      }
     }
     return true;
   }
@@ -114,12 +596,15 @@ class ModelManager {
     return total;
   }
 
-  /// Delete a model's files (main + projector).
+  /// Delete a model's files (main + projector). Any stray `.part`/`.part.meta`
+  /// for the model is removed too, so a delete really means "gone".
   Future<void> delete(LocalModel m) async {
     for (final f in m.files) {
-      final file = File(await pathForFile(f.name));
-      if (await file.exists()) {
-        await file.delete();
+      for (final suffix in const ['', '.part', '.part.meta']) {
+        final file = File('${await pathForFile(f.name)}$suffix');
+        if (await file.exists()) {
+          await file.delete();
+        }
       }
     }
     // Clear the selection if the deleted model was active.
@@ -130,90 +615,318 @@ class ModelManager {
 
   /// Download a model, emitting progress until complete.
   ///
-  /// A `.part` file is used and renamed on success, so an interrupted download
-  /// never leaves a half file that [isInstalled] would treat as valid.
-  Stream<DownloadProgress> download(LocalModel m) async* {
-    final dir = await modelsDir();
-    final totalBytes = m.approxBytes;
-    final floors = _floorsFor(m);
+  /// Each file is fetched to `<name>.part`, verified against its manifest entry
+  /// (exact size + SHA-256), and only then renamed to its final name — so an
+  /// interrupted or corrupt download never leaves a file that [isInstalled]
+  /// would accept. Interruptions keep the `.part` for a later resume.
+  ///
+  /// The returned stream's shape is unchanged from previous versions: progress
+  /// events, then exactly one terminal event with either `done: true` or a
+  /// non-null `error`.
+  Stream<DownloadProgress> download(LocalModel m) {
+    final controller = StreamController<DownloadProgress>();
+    // Fire-and-forget: the pipeline reports everything through the controller.
+    unawaited(_runDownload(m, controller));
+    return controller.stream;
+  }
 
-    for (final f in m.files) {
-      final target = File(p.join(dir.path, f.name));
-      final partFile = File('${target.path}.part');
-      final floor = floors[f.name] ?? m.minBytes;
+  Future<void> _runDownload(
+    LocalModel m,
+    StreamController<DownloadProgress> controller,
+  ) async {
+    final approxTotal = m.approxBytes;
 
-      if (await target.exists() && await target.length() >= floor) {
-        continue; // already have this file
+    void emit(int received, int total, String file,
+        {bool done = false, String? error}) {
+      if (controller.isClosed) return;
+      try {
+        controller.add(DownloadProgress(
+          modelId: m.id,
+          received: received,
+          total: total,
+          currentFile: file,
+          done: done,
+          error: error,
+        ));
+      } catch (_) {
+        // The listener went away mid-download; nothing useful to do.
+      }
+    }
+
+    try {
+      final integrity = integrityFor(m);
+      if (integrity == null || !isImmutableCommitSha(integrity.commitSha)) {
+        // Fail closed: no pin means no verified download.
+        emit(0, approxTotal, m.fileName,
+            error: 'No pinned integrity manifest for ${m.id}; refusing to '
+                'download from a mutable URL.');
+        return;
+      }
+
+      final dir = await modelsDir();
+      final expectedTotal =
+          integrity.files.values.fold<int>(0, (a, f) => a + f.size);
+
+      // --- free space -------------------------------------------------------
+      final missing = <({String name, String url, int size})>[];
+      var haveBytes = 0;
+      for (final f in m.files) {
+        final entry = integrity.files[f.name];
+        if (entry == null) {
+          emit(0, approxTotal, f.name,
+              error: 'Manifest is missing an entry for ${f.name}; refusing to '
+                  'download.');
+          return;
+        }
+        final target = File(await pathForFile(f.name));
+        if (await target.exists() && await target.length() == entry.size) {
+          haveBytes += entry.size; // already have a verified copy
+          continue;
+        }
+        missing.add((name: f.name, url: f.url, size: entry.size));
+      }
+
+      final needed = expectedTotal - haveBytes;
+      if (needed > 0) {
+        final probe = freeSpaceProbe;
+        final free = probe == null ? null : await probe(dir.path);
+        if (free == null) {
+          Log.w('ModelManager: free space unknown on this platform; skipping '
+              'the pre-download check (need ~$needed bytes for ${m.id}).');
+        } else if (free < needed + _freeSpaceReserve) {
+          emit(0, approxTotal, m.fileName,
+              error: 'Not enough free space: need '
+                  '${needed + _freeSpaceReserve} bytes, have $free.');
+          return;
+        }
+      }
+
+      if (missing.isEmpty) {
+        emit(expectedTotal, expectedTotal, m.fileName, done: true);
+        return;
+      }
+
+      // --- fetch each missing file ------------------------------------------
+      var baseBytes = haveBytes;
+      var allOk = true;
+      for (final f in missing) {
+        final entry = integrity.files[f.name]!;
+        final ok = await _fetchOne(
+          url: f.url,
+          fileName: f.name,
+          entry: entry,
+          commitSha: integrity.commitSha,
+          dir: dir,
+          onProgress: (fileReceived) =>
+              emit(baseBytes + fileReceived, expectedTotal, f.name),
+          onError: (msg) => emit(baseBytes, expectedTotal, f.name, error: msg),
+        );
+        if (!ok) {
+          allOk = false;
+          break;
+        }
+        baseBytes += entry.size;
+      }
+
+      if (allOk) {
+        emit(expectedTotal, expectedTotal, m.fileName, done: true);
+      }
+    } catch (e) {
+      emit(0, approxTotal, m.fileName, error: 'Download failed: $e');
+    } finally {
+      if (!controller.isClosed) await controller.close();
+    }
+  }
+
+  /// Fetch one file to its `.part`, verify it, and promote it. Returns false on
+  /// any failure (after emitting an error via [onError]).
+  Future<bool> _fetchOne({
+    required String url,
+    required String fileName,
+    required FileIntegrity entry,
+    required String commitSha,
+    required Directory dir,
+    required void Function(int fileReceived) onProgress,
+    required void Function(String message) onError,
+  }) async {
+    final target = File(p.join(dir.path, fileName));
+    final partPath = '${target.path}.part';
+    final part = File(partPath);
+    final meta = File('$partPath.meta');
+
+    // A full-size final file was SHA-verified before it was promoted, so a
+    // matching size is enough to trust it without re-hashing 1 GB.
+    if (await target.exists()) {
+      if (await target.length() == entry.size) {
+        onProgress(entry.size);
+        return true;
+      }
+      await _deleteQuietly(target); // wrong size — stale/corrupt
+    }
+
+    final pinnedUrl = pinToCommit(url, commitSha);
+
+    // Two attempts: the first may use a range, the second is the clean restart
+    // taken when a range turns out to be unusable.
+    for (var attempt = 1; attempt <= 2; attempt++) {
+      final existing = await _lengthOrZero(part);
+      final stored = await _readMeta(meta);
+      final plan = planResume(
+        existingBytes: existing,
+        expectedSize: entry.size,
+        acceptRangesBytes: stored?.acceptRanges,
+        storedEtag: stored?.etag,
+        storedLastModified: stored?.lastModified,
+        storedExpectedSize: stored?.expectedSize,
+      );
+
+      if (plan.restart && existing > 0) {
+        // Discarding here is deliberate only for a *stale* partial (no
+        // validator, wrong revision, or already full) — never for a plain
+        // network drop, which is handled in the catch below.
+        await _deleteQuietly(part);
+        await _deleteQuietly(meta);
       }
 
       final client = http.Client();
       IOSink? sink;
-      var received = 0;
-
+      var fileReceived = plan.restart ? 0 : plan.startByte;
       try {
-        final request = http.Request('GET', Uri.parse(f.url));
+        final request = http.Request('GET', Uri.parse(pinnedUrl));
+        if (!plan.restart) request.headers.addAll(plan.headers);
+
         final response = await client.send(request).timeout(_connectTimeout);
 
-        if (response.statusCode != 200) {
-          yield DownloadProgress(
-            modelId: m.id,
-            received: 0,
-            total: totalBytes,
-            currentFile: f.name,
-            error: 'Server returned HTTP ${response.statusCode}',
-          );
+        if (response.statusCode != 200 && response.statusCode != 206) {
+          if (response.statusCode == 416) {
+            // "Range Not Satisfiable": our partial is not a valid prefix of the
+            // remote file (it is already as large/larger). Drop it and take the
+            // clean path rather than retrying the same failing range forever.
+            await response.stream.drain();
+            client.close();
+            await _deleteQuietly(part);
+            await _deleteQuietly(meta);
+            continue;
+          }
           client.close();
-          return;
+          onError('Server returned HTTP ${response.statusCode} for $fileName');
+          return false;
         }
 
-        final contentLength = response.contentLength ?? 0;
-        sink = partFile.openWrite();
+        var append = false;
+        if (response.statusCode == 206) {
+          final rangeStart =
+              _parseContentRangeStart(response.headers['content-range']);
+          final usable = !plan.restart &&
+              plan.startByte > 0 &&
+              interpretRangedGet(
+                    statusCode: 206,
+                    requestedStart: plan.startByte,
+                    contentRangeStart: rangeStart,
+                  ) ==
+                  RangeVerdict.resume;
+          if (usable) {
+            append = true;
+          } else {
+            // A 206 we did not ask for, or from an unexpected offset: drop it
+            // and take the clean path.
+            await response.stream.drain();
+            client.close();
+            await _deleteQuietly(part);
+            await _deleteQuietly(meta);
+            continue;
+          }
+        } else {
+          // 200: a normal fresh transfer, or the server ignored our Range (or
+          // If-Range rejected a stale validator). Either way the body starts at
+          // byte 0, so any partial is now stale and must go.
+          if (existing > 0) {
+            await _deleteQuietly(part);
+            await _deleteQuietly(meta);
+          }
+          fileReceived = 0;
+        }
 
-        await for (final chunk in response.stream) {
+        final isWholeBody = !append && response.statusCode == 200;
+
+        // Persist the validators now, so an interruption can be resumed.
+        await _writeMeta(
+          meta,
+          _PartMeta(
+            etag: response.headers['etag'],
+            lastModified: response.headers['last-modified'],
+            acceptRanges: _acceptsRanges(response.headers['accept-ranges']),
+            expectedSize: entry.size,
+          ),
+        );
+
+        sink = part.openWrite(mode: append ? FileMode.append : FileMode.write);
+
+        // The inactivity timeout turns a stalled socket into a typed error
+        // instead of a download that hangs for hours.
+        await for (final chunk in response.stream.timeout(_inactivityTimeout)) {
           sink.add(chunk);
-          received += chunk.length;
-          yield DownloadProgress(
-            modelId: m.id,
-            received: received,
-            total: contentLength > 0 ? contentLength : totalBytes,
-            currentFile: f.name,
-          );
+          fileReceived += chunk.length;
+          onProgress(fileReceived);
         }
-
         await sink.flush();
         await sink.close();
         sink = null;
         client.close();
 
-        // Promote the completed file.
+        final finalLength = await _lengthOrZero(part);
+        final verification = verifyDownload(
+          receivedBytes: finalLength,
+          expectedSize: entry.size,
+          // For a 206 the Content-Length is only the remaining bytes, so it
+          // must not be compared against the whole-file size.
+          contentLength: isWholeBody ? response.contentLength : null,
+          expectedSha256: entry.sha256,
+          actualSha256: await sha256HexOfFile(part.path),
+        );
+        if (!verification.ok) {
+          if (verification.verdict == DownloadVerdict.truncated) {
+            // A short file is a valid *prefix* of the real one, so keep it and
+            // its validators for the next run to resume — deleting here would
+            // recreate the endless-restart loop for exactly this model.
+            onError('$fileName incomplete (${verification.message}); progress '
+                'kept, retry to resume.');
+            return false;
+          }
+          // Wrong bytes at the right size, or the wrong length entirely: the
+          // partial cannot be trusted or resumed, so keep nothing.
+          await _deleteQuietly(part);
+          await _deleteQuietly(meta);
+          onError('$fileName failed integrity check: ${verification.message}');
+          return false;
+        }
+
         if (await target.exists()) await target.delete();
-        await partFile.rename(target.path);
+        await part.rename(target.path);
+        await _deleteQuietly(meta);
+        onProgress(entry.size);
+        return true;
       } catch (e) {
+        // Network/timeout failure: KEEP the `.part` and its validators so the
+        // next run resumes instead of re-downloading from zero. Deleting here
+        // was the original "downloads again and again" bug.
         try {
           await sink?.close();
         } catch (_) {}
         client.close();
-        if (await partFile.exists()) {
-          await partFile.delete();
+        if (e is TimeoutException) {
+          onError('Download stalled (no data for '
+              '${_inactivityTimeout.inSeconds}s); progress kept, retry to '
+              'resume.');
+        } else {
+          onError('Download interrupted: $e (progress kept, retry to resume)');
         }
-        yield DownloadProgress(
-          modelId: m.id,
-          received: received,
-          total: totalBytes,
-          currentFile: f.name,
-          error: 'Download failed: $e',
-        );
-        return;
+        return false;
       }
     }
 
-    yield DownloadProgress(
-      modelId: m.id,
-      received: totalBytes,
-      total: totalBytes,
-      currentFile: m.fileName,
-      done: true,
-    );
+    onError('Could not download $fileName after retrying.');
+    return false;
   }
 
   // ------------------------------------------------------------- selection
@@ -285,4 +998,45 @@ class ModelManager {
     if (m != null && m.isEmbedding && await isInstalled(m)) return m;
     return null;
   }
+}
+
+// =============================================================== file helpers
+
+Future<int> _lengthOrZero(File f) async {
+  if (!await f.exists()) return 0;
+  return await f.length();
+}
+
+Future<void> _deleteQuietly(File f) async {
+  try {
+    if (await f.exists()) await f.delete();
+  } catch (_) {}
+}
+
+Future<_PartMeta?> _readMeta(File meta) async {
+  try {
+    if (!await meta.exists()) return null;
+    return _PartMeta.fromJson(await meta.readAsString());
+  } catch (_) {
+    return null;
+  }
+}
+
+Future<void> _writeMeta(File meta, _PartMeta data) async {
+  try {
+    await meta.writeAsString(jsonEncode(data.toJson()), flush: true);
+  } catch (_) {}
+}
+
+/// True when an `Accept-Ranges` header advertises byte ranges.
+bool _acceptsRanges(String? header) =>
+    header != null && header.toLowerCase().contains('bytes');
+
+/// Parses the start offset from a `Content-Range` header
+/// (`bytes 100-999/1000`), or null when absent/unparseable.
+int? _parseContentRangeStart(String? header) {
+  if (header == null) return null;
+  final match = RegExp(r'bytes\s+(\d+)-').firstMatch(header);
+  if (match == null) return null;
+  return int.tryParse(match.group(1)!);
 }

@@ -130,11 +130,14 @@ class ModelCatalog {
     kind: ModelKind.vision,
     fileName: 'moondream2-050824-q5k.gguf',
     url: 'https://huggingface.co/cjpais/moondream2-llamafile/resolve/main/moondream2-050824-q5k.gguf',
-    approxBytes: 1300000000,
+    // Weights 1,059,610,016 B + mmproj 909,777,984 B = 1,969,388,000 B. The
+    // old 1.3 GB figure counted only the weights, so the download never had
+    // room reserved for the projector half.
+    approxBytes: 1969388000,
     projectorFileName: 'moondream2-mmproj-050824-f16.gguf',
     projectorUrl: 'https://huggingface.co/cjpais/moondream2-llamafile/resolve/main/moondream2-mmproj-050824-f16.gguf',
     contextSize: 2048,
-    ramHint: '~1.6 GB',
+    ramHint: '~2.4 GB',
   );
 
   /// --------------------------------------------------------- embedding model
