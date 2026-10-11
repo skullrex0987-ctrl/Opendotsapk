@@ -101,15 +101,40 @@ class DatabaseHelper {
   }
 
   Future<void> _upgrade(Database db, int from, int to) async {
-    Log.w('database upgrade $from -> $to: rebuilding vector store');
+    Log.w('database upgrade $from -> $to');
 
-    // Old `vec0` table (if it somehow exists) is not a real table and cannot be
-    // altered; drop it and recreate properly. Messages are preserved.
-    await db.execute('DROP TABLE IF EXISTS $tableVectors');
-    await db.execute('DROP TABLE IF EXISTS $tableChunks');
+    // This used to DROP $tableVectors and $tableChunks unconditionally on every
+    // version bump, then recreate them empty. Every embedding and every
+    // document chunk the user had was silently discarded by a routine app
+    // update — their whole searchable index, gone, with no warning.
+    //
+    // The tables are created with IF NOT EXISTS, so an unchanged schema needs
+    // no rebuild at all. The one genuine exception is the legacy `vec0` virtual
+    // table, which is not a real table and cannot be altered, so it is detected
+    // and only that one is replaced. $tableChunks is left alone.
+    await _dropLegacyVec0IfPresent(db);
 
     await _createVectorTables(db);
     await _createDocumentTables(db);
+  }
+
+  /// Drops the vector table only when it is the legacy `vec0` virtual table.
+  ///
+  /// A normal table is deliberately left in place so its rows survive the
+  /// upgrade. Without this distinction the only options were "drop everything"
+  /// or "never fix a bad schema".
+  Future<void> _dropLegacyVec0IfPresent(Database db) async {
+    final rows = await db.rawQuery(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+      [tableVectors],
+    );
+    if (rows.isEmpty) return;
+
+    final sql = '${rows.first['sql'] ?? ''}'.toLowerCase();
+    if (!sql.contains('vec0')) return;
+
+    Log.w('$tableVectors is a legacy vec0 table; replacing it');
+    await db.execute('DROP TABLE IF EXISTS $tableVectors');
   }
 
   Future<void> _createTables(Database db) async {
@@ -601,25 +626,46 @@ class DatabaseHelper {
     return db.delete(tableDocuments, where: 'id = ?', whereArgs: [id]);
   }
 
-  /// Search inside documents by keyword. Vector search across document chunks
-  /// runs through [searchHybrid] once chunks are mirrored into the memory
-  /// store; this covers the "just find the file with X in it" case cheaply.
+  /// Search inside documents by keyword.
+  ///
+  /// The chunk text column is encrypted at rest (see [insertChunks]), so the
+  /// SQL `LIKE` this used to run could never match anything a user typed — the
+  /// search was looking for their words inside ciphertext. Matching therefore
+  /// happens after decryption.
+  ///
+  /// Only the two columns needed are read, and the await inside the loop yields
+  /// between rows so a large index does not lock the frame. It is still O(all
+  /// chunks) per search; a plaintext blind index would make it O(matches) and is
+  /// the right next step if document counts grow.
   Future<List<Map<String, dynamic>>> searchDocuments(String query) async {
-    final db = await database;
-    final rows = await db.rawQuery('''
-      SELECT d.* FROM $tableDocuments d
-      JOIN $tableChunks c ON c.document_id = d.id
-      WHERE c.text LIKE ?
-      GROUP BY d.id
-      ORDER BY d.added_at DESC
-      LIMIT 20
-    ''', ['%$query%']);
+    final needle = query.trim().toLowerCase();
+    if (needle.isEmpty) return const [];
 
-    final out = <Map<String, dynamic>>[];
-    for (final r in rows) {
-      out.add(Map<String, dynamic>.from(r));
+    final db = await database;
+
+    final chunks = await db.query(
+      tableChunks,
+      columns: ['document_id', 'text'],
+    );
+
+    final matchedIds = <String>{};
+    for (final row in chunks) {
+      final plain = await _decryptTextColumn('${row['text'] ?? ''}');
+      if (plain.toLowerCase().contains(needle)) {
+        matchedIds.add('${row['document_id']}');
+      }
     }
-    return out;
+    if (matchedIds.isEmpty) return const [];
+
+    final docs = await db.query(
+      tableDocuments,
+      where: 'id IN (${List.filled(matchedIds.length, '?').join(',')})',
+      whereArgs: matchedIds.toList(),
+      orderBy: 'added_at DESC',
+      limit: 20,
+    );
+
+    return [for (final r in docs) Map<String, dynamic>.from(r)];
   }
 
   Future<List<Map<String, dynamic>>> getChunksFor(String documentId) async {
@@ -691,8 +737,11 @@ class DatabaseHelper {
     await db.insert(tableActivityLog, {
       'id': id,
       'tool_name': toolName,
-      'params': params,
-      'result': result,
+      // These were written as plaintext while getActivityLog decrypted them on
+      // the way out, so the log both leaked its contents at rest and failed to
+      // read back correctly. Write and read now agree.
+      'params': await CryptoBox.instance.encrypt(params),
+      'result': await CryptoBox.instance.encrypt(result),
       'status': status,
       'timestamp': timestamp,
       'permission_level': permissionLevel,
