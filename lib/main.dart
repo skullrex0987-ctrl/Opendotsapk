@@ -29,6 +29,13 @@ void callbackDispatcher() {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Startup is a sequence of awaited platform calls before the first frame.
+  // None of them can hang indefinitely, but together they are the user's first
+  // impression of the app, so the total is measured and logged: a regression
+  // here shows up as a number in the Activity screen rather than as a vague
+  // "the app feels slow to open".
+  final startupWatch = Stopwatch()..start();
+
   // Portrait only.
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
@@ -84,8 +91,12 @@ Future<void> main() async {
     } else {
       await RouterService.instance.probeConnectivity();
     }
-  } catch (_) {
-    // Defaults to online; the router re-checks later.
+  } catch (e) {
+    // Defaults to online; the router re-checks later. Logged rather than
+    // swallowed: "the app opened without reading the user's privacy setting"
+    // is the kind of thing that must be visible in a bug report, and it also
+    // means the connectivity probe never ran.
+    Log.w('startup routing probe failed, defaulting to online: $e');
   }
 
   // WorkManager can fail on some devices/emulators; never let it block startup.
@@ -94,6 +105,8 @@ Future<void> main() async {
   } catch (e) {
     Log.w('WorkManager init failed: $e');
   }
+
+  Log.i('startup completed in ${startupWatch.elapsedMilliseconds}ms');
 
   runApp(const ProviderScope(child: LocalMindApp()));
 }

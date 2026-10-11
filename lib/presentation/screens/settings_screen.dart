@@ -346,7 +346,7 @@ class VoiceSettings extends ConsumerWidget {
     final ttsEnabled = settings['tts_enabled'] as bool? ?? true;
 
     return SwitchListTile(
-      leading: const ScreenRowIcon(icon: Icons.record_voice_over_outlined),
+      secondary: const ScreenRowIcon(icon: Icons.record_voice_over_outlined),
       title: const Text('Text-to-Speech'),
       subtitle: const Text('Read responses aloud'),
       value: ttsEnabled,

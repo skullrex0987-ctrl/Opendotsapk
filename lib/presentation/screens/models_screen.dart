@@ -604,7 +604,11 @@ class _RoleIcon extends StatelessWidget {
     final icon = switch (kind) {
       ModelKind.llm => Icons.psychology_outlined,
       ModelKind.vision => Icons.visibility_outlined,
-      ModelKind.embedding => Icons.embed_outlined,
+      // Icons.embed_outlined does not exist in the Material icon set (only
+      // embed/embed_rounded/embed_sharp do), which the analyzer does not catch
+      // but the kernel snapshot does. dns_outlined reads as "stored vectors"
+      // and is already used elsewhere in the app.
+      ModelKind.embedding => Icons.dns_outlined,
     };
 
     return Container(

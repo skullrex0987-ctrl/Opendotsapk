@@ -31,6 +31,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:cryptography/cryptography.dart';
 import 'package:cryptography/dart.dart' show DartHashAlgorithm, DartHashSink;
@@ -42,6 +43,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/utils/log.dart';
 import '../../domain/models/local_model.dart';
+import 'model_file_cache.dart';
 
 // =============================================================== integrity model
 
@@ -453,15 +455,62 @@ String sha256HexOfBytes(List<int> bytes) {
 /// Uses the pure-Dart incremental sink (`Sha256().newHashSink()` buffers the
 /// whole input in memory; `toSync().newHashSink()` does not), so hashing a 1 GB
 /// GGUF verifies it without holding 1 GB of it in RAM.
-Future<String> sha256HexOfFile(String path) async {
+///
+/// ## Why this runs on a background isolate
+///
+/// Measured on a desktop x86 core with the same pure-Dart implementation this
+/// file uses, SHA-256 runs at roughly **25 MiB/s**. That makes the cost of
+/// verifying one of this app's own pinned downloads:
+///
+/// | file | size | CPU on the calling isolate |
+/// |------|------|----------------------------|
+/// | qwen2.5-0.5b q4_k_m | 469 MiB | ~20 s |
+/// | qwen3.5-0.8b (weights + mmproj) | 703 MiB | ~28 s |
+/// | moondream2 (weights + mmproj) | 1878 MiB | ~75 s |
+///
+/// Pure-Dart hashing is straight-line synchronous CPU work: every microtask
+/// between chunks waits behind it, so the UI isolate cannot paint, cannot
+/// process a frame callback, and cannot even start laying out the progress bar
+/// the user is watching — for the entire verification step, which happens on
+/// *every* completed download. The download progress UI freezes at 100% for
+/// tens of seconds and the system may ANR.
+///
+/// [Isolate.run] moves the identical work onto a worker isolate, so the UI
+/// stays responsive and the progress screen keeps animating while it runs.
+/// The signature, the digest, and the verification semantics are unchanged:
+/// `_hashFileInIsolate` is a top-level function (the only shape that can cross
+/// an isolate boundary) and returns exactly what the inline version did.
+Future<String> sha256HexOfFile(String path) =>
+    Isolate.run(() => _hashFileInIsolate(path));
+
+/// Read [path] and return its SHA-256 as lowercase hex.
+///
+/// Top-level and synchronous so it can be handed to [Isolate.run]; the only
+/// thing that crosses the boundary is the path (a `String`, which is sendable)
+/// and the resulting digest.
+String _hashFileInIsolate(String path) {
   final DartHashAlgorithm algorithm = Sha256().toSync();
   final DartHashSink sink = algorithm.newHashSink();
-  await for (final chunk in File(path).openRead()) {
-    sink.add(chunk);
+
+  // 256 KiB per read: large enough that the syscall cost disappears next to
+  // the hashing, small enough that peak memory stays trivial on a phone.
+  final raf = File(path).openSync();
+  try {
+    while (true) {
+      final chunk = raf.readSync(_hashChunkBytes);
+      if (chunk.isEmpty) break;
+      sink.add(chunk);
+    }
+  } finally {
+    raf.closeSync();
   }
+
   sink.close();
   return _toHex(sink.hashSync().bytes);
 }
+
+/// Read size used by [sha256HexOfFile].
+const int _hashChunkBytes = 256 * 1024;
 
 // =============================================================== free space
 
@@ -575,14 +624,62 @@ class ModelManager {
   /// volume to the last byte.
   static const int _freeSpaceReserve = 64 * 1024 * 1024;
 
+  /// Cached "does this file exist, and how big is it" answers.
+  ///
+  /// Every model screen asks [isInstalled] once per catalogue row on every
+  /// build, so a scrolling list re-stats the same files dozens of times for an
+  /// answer that cannot have changed. See `model_file_cache.dart` for the TTL
+  /// and invalidation contract; every write/rename/delete below invalidates
+  /// the exact path it touched.
+  final FilePresenceCache _fileCache = FilePresenceCache();
+
+  /// Resolved once per process.
+  ///
+  /// `getApplicationDocumentsDirectory()` is a platform-channel round trip, and
+  /// [isInstalled] used to call it once *per file* rather than once per model —
+  /// so a single row could cost four channel calls before touching the disk.
+  /// The documents directory cannot move while the app runs, so it is asked
+  /// once and reused. [clearFileCache] drops this along with the file cache when
+  /// the whole models directory is removed underneath us.
+  String? _modelsDirPath;
+
+  /// Exposed so diagnostics can see how much redundant probing is being
+  /// avoided, and so a test can assert the cache is actually being used.
+  ///
+  /// Deliberately a plain getter rather than a `@visibleForTesting` member:
+  /// this is a pure-Dart data-layer file and does not otherwise depend on
+  /// Flutter, and a test may legitimately hold on to it.
+  FilePresenceCache get fileCache => _fileCache;
+
   /// Directory that holds all downloaded models.
   Future<Directory> modelsDir() async {
+    final cached = _modelsDirPath;
+    if (cached != null) {
+      final dir = Directory(cached);
+      // The directory itself can vanish ("erase all data" deletes it), so the
+      // cheap existence check stays even though the path is memoised.
+      if (await dir.exists()) return dir;
+      _modelsDirPath = null;
+    }
+
     final docs = await getApplicationDocumentsDirectory();
     final dir = Directory(p.join(docs.path, AppConstants.modelsDirName));
     if (!await dir.exists()) {
       await dir.create(recursive: true);
     }
+    _modelsDirPath = dir.path;
     return dir;
+  }
+
+  /// Drop every cached filesystem answer and the memoised models directory.
+  ///
+  /// The TTL means a stale answer is never permanent, but when the whole models
+  /// directory is deleted at once (Erase all data) re-resolving the path costs
+  /// one channel call and removes any chance of answering from a cache entry
+  /// for a file that no longer exists.
+  void clearFileCache() {
+    _fileCache.clear();
+    _modelsDirPath = null;
   }
 
   Future<String> pathForFile(String fileName) async {
@@ -613,18 +710,23 @@ class ModelManager {
   /// When a manifest entry exists its exact size is authoritative (a file that
   /// is the wrong size is not installed, however large it is); otherwise the
   /// coarser per-file floor is used.
+  ///
+  /// Resolves the models directory once and then answers every file from
+  /// [_fileCache], so a rebuild of a list of rows costs one directory lookup
+  /// and no syscalls at all while the cache is warm.
   Future<bool> isInstalled(LocalModel m) async {
     final floors = _floorsFor(m);
     final integrity = integrityFor(m);
+    final dir = await modelsDir();
 
     for (final f in m.files) {
-      final file = File(await pathForFile(f.name));
-      if (!await file.exists()) return false;
-      final len = await file.length();
+      final path = p.join(dir.path, f.name);
+      final stat = await _fileCache.get(path);
+      if (!stat.exists) return false;
       final expected = integrity?.files[f.name]?.size;
       if (expected != null) {
-        if (len != expected) return false;
-      } else if (len < (floors[f.name] ?? m.minBytes)) {
+        if (stat.length != expected) return false;
+      } else if (stat.length < (floors[f.name] ?? m.minBytes)) {
         return false;
       }
     }
@@ -650,6 +752,9 @@ class ModelManager {
     for (final f in m.files) {
       for (final suffix in const ['', '.part', '.part.meta']) {
         final file = File('${await pathForFile(f.name)}$suffix');
+        // The cache must not survive the removal: the whole point of deleting a
+        // model is that the row immediately reads as "not downloaded".
+        _fileCache.invalidate(file.path);
         if (await file.exists()) {
           await file.delete();
         }
@@ -836,6 +941,9 @@ class ModelManager {
         return true;
       }
       await _deleteQuietly(target); // wrong size — stale/corrupt
+      // The file this download is about to produce no longer has a cached
+      // "present" answer, and its replacement will have a different size.
+      _fileCache.invalidate(target.path);
     }
 
     final pinnedUrl = pinToCommit(url, commitSha);
@@ -975,12 +1083,19 @@ class ModelManager {
           // partial cannot be trusted or resumed, so keep nothing.
           await _deleteQuietly(part);
           await _deleteQuietly(meta);
+          _fileCache.invalidate(target.path);
           onError('$fileName failed integrity check: ${verification.message}');
           return false;
         }
 
         if (await target.exists()) await target.delete();
         await part.rename(target.path);
+        // The promotion is the moment the model's identity changes on disk:
+        // the file that `isInstalled` will be asked about now exists, with the
+        // size the manifest pinned. Invalidate both paths so the very next
+        // `isInstalled` reports the truth rather than the pre-download answer.
+        _fileCache.invalidate(target.path);
+        _fileCache.invalidate(partPath);
         await _deleteQuietly(meta);
         onProgress(entry.size);
         return true;

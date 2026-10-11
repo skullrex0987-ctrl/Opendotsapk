@@ -15,6 +15,8 @@ import 'dart:typed_data';
 
 import 'package:onnxruntime/onnxruntime.dart';
 
+import '../../core/utils/log.dart';
+
 class EmbeddingService {
   static EmbeddingService? _instance;
 
@@ -45,6 +47,11 @@ class EmbeddingService {
   static EmbeddingService getInstance() => _instance ??= EmbeddingService._();
 
   /// Load an ONNX encoder from an absolute file path.
+  ///
+  /// Returns false rather than throwing on failure, so callers can degrade to
+  /// keyword-only retrieval; the reason is logged because "Memory search is
+  /// off" with no cause is exactly the kind of silent failure that leaves a
+  /// user blaming the app rather than their download.
   Future<bool> loadModel(String modelPath, {int dimension = 384}) async {
     try {
       _dim = dimension;
@@ -61,11 +68,19 @@ class EmbeddingService {
       );
       if (await vocabFile.exists()) {
         _vocab = await _loadVocab(vocabFile);
+      } else {
+        // Not fatal, but retrieval quality collapses to hash-token garbage, so
+        // it is worth a line in the log rather than a silent downgrade.
+        Log.w(
+          'EmbeddingService: no vocab.txt beside ${File(modelPath).path}; '
+          'falling back to the hash tokenizer, which degrades retrieval.',
+        );
       }
       return true;
     } catch (e) {
       _isLoaded = false;
       _session = null;
+      Log.e('EmbeddingService: failed to load $modelPath: $e');
       return false;
     }
   }
@@ -245,8 +260,15 @@ class EmbeddingService {
     return ids.length > _maxTokens ? ids.sublist(0, _maxTokens) : ids;
   }
 
+  /// Drop the session and the vocabulary.
+  ///
+  /// The vocab is cleared alongside the session rather than kept: it is keyed
+  /// to the model file it was read from, so a reload of a *different* encoder
+  /// would otherwise silently keep tokenising with the previous model's
+  /// vocabulary.
   Future<void> release() async {
     _session = null;
     _isLoaded = false;
+    _vocab = null;
   }
 }

@@ -129,7 +129,7 @@ class _CloudModelsScreenState extends ConsumerState<CloudModelsScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
-          const _PrivacyCard(),
+          _privacyCard(),
           const SizedBox(height: 20),
           _routingCard(settings),
           const SizedBox(height: 20),

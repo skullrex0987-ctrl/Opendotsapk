@@ -75,6 +75,48 @@ class DatabaseHelper {
   /// write, because a stale IDF makes keyword ranking quietly wrong.
   _CorpusStats? _corpus;
 
+  /// Decoded memory rows used by search, cached alongside [_corpus].
+  ///
+  /// [_loadCandidates] is O(every row): one SQLite read, one AES-GCM decrypt
+  /// and one tokenisation per memory. Doing that again for every keystroke of a
+  /// search is the single most expensive thing in the RAG path, and the answer
+  /// cannot change between two searches with no write in between — which is
+  /// exactly when [_invalidateIndex] has not run.
+  ///
+  /// Bounded: a corpus larger than [_maxCachedCandidates] rows is deliberately
+  /// *not* retained, because holding thousands of decrypted passages plus their
+  /// vectors and term-frequency maps resident is the kind of memory pressure
+  /// that gets an Android app killed. Above the cap the behaviour is exactly
+  /// what it always was — computed per query — just not faster.
+  static const int _maxCachedCandidates = 512;
+
+  List<_Candidate>? _candidates;
+
+  /// Memoised preferences, and when they were read.
+  ///
+  /// `user_preferences` is a tiny key/value table — every key this app reads is
+  /// a fixed name, and the whole table is a few hundred bytes. Reading it in
+  /// one query and serving from a map turns a dozen sequential round trips
+  /// (what a settings load does) into one, and makes every subsequent read free.
+  ///
+  /// Correctness rests on [savePreference] being the only writer, and on this
+  /// class invalidating the memo in [wipe] and [close]. The TTL is a belt-and-
+  /// braces measure for a write that somehow bypasses this class.
+  static const Duration preferenceCacheTtl = Duration(seconds: 30);
+
+  Map<String, String>? _preferences;
+  DateTime? _preferencesReadAt;
+
+  /// Invalidate the retrieval index (decoded candidates *and* BM25 stats).
+  ///
+  /// One method rather than two assignments so the two can never drift apart —
+  /// a corpus whose stats came from one set of rows and whose candidates came
+  /// from another would rank against numbers that do not describe it.
+  void _invalidateIndex() {
+    _corpus = null;
+    _candidates = null;
+  }
+
   // ------------------------------------------------------------------ open
 
   Future<Database> get database async {
@@ -266,7 +308,7 @@ class DatabaseHelper {
       'timestamp': timestamp,
       'conversation_id': conversationId,
     });
-    _corpus = null;
+    _invalidateIndex();
     return id;
   }
 
@@ -293,7 +335,7 @@ class DatabaseHelper {
 
   Future<int> deleteAllMessages() async {
     final db = await database;
-    _corpus = null;
+    _invalidateIndex();
     return db.delete(tableMessages);
   }
 
@@ -317,7 +359,7 @@ class DatabaseHelper {
     }
 
     final db = await database;
-    _corpus = null;
+    _invalidateIndex();
     return db.insert(tableVectors, {
       'source_id': sourceId,
       'source_type': sourceType,
@@ -330,13 +372,13 @@ class DatabaseHelper {
 
   Future<int> deleteMemory(int id) async {
     final db = await database;
-    _corpus = null;
+    _invalidateIndex();
     return db.delete(tableVectors, where: 'id = ?', whereArgs: [id]);
   }
 
   Future<int> deleteAllMemories() async {
     final db = await database;
-    _corpus = null;
+    _invalidateIndex();
     return db.delete(tableVectors);
   }
 
@@ -516,7 +558,22 @@ class DatabaseHelper {
   }
 
   /// Load every memory row and decode its vector once.
+  ///
+  /// Memoised between writes (see [_maxCachedCandidates]): this is the whole
+  /// per-query cost of retrieval — a table read, an AES-GCM decrypt and a
+  /// tokenisation for every memory in the index — and it does not change
+  /// between two searches.
   Future<List<_Candidate>> _loadCandidates() async {
+    final cached = _candidates;
+    if (cached != null) return cached;
+    final loaded = await _readCandidates();
+    if (loaded.length <= _maxCachedCandidates) _candidates = loaded;
+    return loaded;
+  }
+
+  /// Read and decode every memory row. Never cached directly; see
+  /// [_loadCandidates].
+  Future<List<_Candidate>> _readCandidates() async {
     final db = await database;
     final rows = await db.query(tableVectors);
 
@@ -611,12 +668,22 @@ class DatabaseHelper {
       throw ArgumentError('chunk/text count mismatch');
     }
     final db = await database;
+
+    // Encrypt every chunk concurrently instead of one await at a time.
+    //
+    // Each AES-GCM encryption is independent and yields on its own asynchronous
+    // work, so running them in sequence made ingesting a document cost the sum
+    // of every chunk's encryption; `Future.wait` overlaps them. Order is
+    // preserved by construction (`Future.wait` returns results in input order),
+    // so ordinal `i` is still paired with `texts[i]` exactly as before.
+    final encrypted = await Future.wait(texts.map(CryptoBox.instance.encrypt));
+
     final batch = db.batch();
     for (var i = 0; i < texts.length; i++) {
       batch.insert(tableChunks, {
         'document_id': documentId,
         'ordinal': i,
-        'text': await CryptoBox.instance.encrypt(texts[i]),
+        'text': encrypted[i],
         'embedding': encodeVector(vectors[i]),
         'dim': vectors[i].length,
       });
@@ -738,6 +805,26 @@ class DatabaseHelper {
 
   // ----------------------------------------------------------- activity log
 
+  /// Rows kept in the activity log.
+  ///
+  /// The log is append-only machine output — one row per tool call — and
+  /// nothing in the app ever prunes it, so a long-running install grew without
+  /// bound. The Activity screen only ever reads the newest
+  /// [getActivityLog] default of 100, and `clearActivityLog` is a user control,
+  /// so retaining a generous window keeps everything the UI can reach and
+  /// discards history no interface can display.
+  ///
+  /// Deliberately not aggressive: 1000 entries is far more than any person
+  /// scrolls through, and trimming is skipped entirely below this count so the
+  /// common case (a fresh install) never pays for the delete.
+  static const int activityLogRetention = 1000;
+
+  /// Store a tool-call record.
+  ///
+  /// Writes, then trims to [activityLogRetention]. The trim is a delete rather
+  /// than a count-and-check so it cannot be skipped by a concurrent insert, and
+  /// it targets only rows outside the newest window — the rows the UI shows are
+  /// never at risk.
   Future<String> insertActivityLog({
     required String id,
     required String toolName,
@@ -760,7 +847,21 @@ class DatabaseHelper {
       'timestamp': timestamp,
       'permission_level': permissionLevel,
     });
+    await _trimActivityLog(db);
     return id;
+  }
+
+  /// Delete activity rows older than the newest [activityLogRetention].
+  ///
+  /// The `NOT IN (SELECT ...)` form is one statement regardless of how many
+  /// rows exist, so there is no read-then-delete race between deciding what is
+  /// old and removing it.
+  Future<void> _trimActivityLog(Database db) async {
+    await db.rawDelete(
+      'DELETE FROM $tableActivityLog WHERE id NOT IN '
+      '(SELECT id FROM $tableActivityLog ORDER BY timestamp DESC LIMIT ?)',
+      [activityLogRetention],
+    );
   }
 
   Future<List<Map<String, dynamic>>> getActivityLog({int limit = 100}) async {
@@ -788,23 +889,92 @@ class DatabaseHelper {
 
   // ------------------------------------------------------------ preferences
 
+  /// Persist one preference.
+  ///
+  /// Writes through to [preferenceCache] rather than invalidating it, so a
+  /// screen that saves a setting and immediately reads it back gets the value
+  /// it just wrote rather than a re-query.
   Future<void> savePreference(String key, String value) async {
     final db = await database;
     await db.insert(tableUserPreferences, {
       'key': key,
       'value': value,
     }, conflictAlgorithm: ConflictAlgorithm.replace);
+    (_preferences ??= <String, String>{})[key] = value;
+    _preferencesReadAt = DateTime.now();
   }
 
+  /// Read one preference, or null when it has never been set.
+  ///
+  /// Served from the memoised table rather than issued as its own query. The
+  /// table is small and this method is called in loops by anything loading
+  /// settings, so the difference between "one query for the whole table" and
+  /// "one query per key" is the difference between a first frame that arrives
+  /// promptly and one that waits on a dozen sequential SQLite round trips.
   Future<String?> getPreference(String key) async {
+    final prefs = await _preferenceSnapshot();
+    return prefs[key];
+  }
+
+  /// Read many preferences at once.
+  ///
+  /// Equivalent to awaiting [getPreference] for each key, but a caller that
+  /// knows its keys up front can collapse the whole set into a single
+  /// snapshot — [preferenceCache] makes that free once the table has been read
+  /// once. Keys with no stored value are absent from the result, exactly as
+  /// [getPreference] returns null for them.
+  Future<Map<String, String>> getPreferences(Iterable<String> keys) async {
+    final prefs = await _preferenceSnapshot();
+    final out = <String, String>{};
+    for (final key in keys) {
+      final value = prefs[key];
+      if (value != null) out[key] = value;
+    }
+    return out;
+  }
+
+  /// The memoised preference table, or null before the first read.
+  ///
+  /// Exposed for diagnostics and so a caller that knows it has written to the
+  /// table by another route can check what this class currently believes. It is
+  /// a snapshot, not a live view: prefer [getPreference].
+  Map<String, String>? get preferenceCache => _preferences;
+
+  /// Drop the memoised preferences, forcing the next read back to the database.
+  ///
+  /// Called by [wipe] and [close]. Exposed so anything that writes to the
+  /// preferences table by another route can keep the memo honest.
+  void invalidatePreferenceCache() {
+    _preferences = null;
+    _preferencesReadAt = null;
+  }
+
+  /// The whole preference table, read at most once per
+  /// [preferenceCacheTtl].
+  Future<Map<String, String>> _preferenceSnapshot() async {
+    final cached = _preferences;
+    final readAt = _preferencesReadAt;
+    final now = DateTime.now();
+    if (cached != null &&
+        readAt != null &&
+        now.difference(readAt) < preferenceCacheTtl) {
+      return cached;
+    }
+
     final db = await database;
-    final r = await db.query(
+    final rows = await db.query(
       tableUserPreferences,
-      where: 'key = ?',
-      whereArgs: [key],
-      limit: 1,
+      columns: ['key', 'value'],
     );
-    return r.isEmpty ? null : r.first['value'] as String?;
+    final out = <String, String>{};
+    for (final row in rows) {
+      final key = row['key'];
+      final value = row['value'];
+      if (key is String && value is String) out[key] = value;
+    }
+    _preferences = out;
+    _preferencesReadAt = now;
+    return out;
   }
 
   // ------------------------------------------------------------- utilities
@@ -823,30 +993,54 @@ class DatabaseHelper {
     ]) {
       await db.delete(t);
     }
-    _corpus = null;
+    _invalidateIndex();
+    // Every preference row is gone, so anything this class remembers about
+    // them is now wrong. Leaving the memo in place would hand back settings
+    // the user had just erased.
+    invalidatePreferenceCache();
     Log.w('database wiped');
   }
 
+  /// Row counts for every user-facing table.
+  ///
+  /// One query rather than six: each `SELECT COUNT(*)` is a separate round trip
+  /// through the platform channel, and this is called from screens that are
+  /// already trying to paint promptly. SQLite evaluates the scalar
+  /// sub-selects in a single pass over an index-free `COUNT(*)` each, which is
+  /// far cheaper than six statements being queued and awaited in sequence.
   Future<Map<String, int>> stats() async {
     final db = await database;
-    Future<int> count(String t) async {
-      final r = await db.rawQuery('SELECT COUNT(*) c FROM $t');
-      return (r.first['c'] as int?) ?? 0;
-    }
+    final r = await db.rawQuery('''
+      SELECT
+        (SELECT COUNT(*) FROM $tableMessages)    AS messages,
+        (SELECT COUNT(*) FROM $tableVectors)     AS memories,
+        (SELECT COUNT(*) FROM $tableNotes)       AS notes,
+        (SELECT COUNT(*) FROM $tableDocuments)   AS documents,
+        (SELECT COUNT(*) FROM $tableChunks)      AS chunks,
+        (SELECT COUNT(*) FROM $tableActivityLog) AS activity
+    ''');
+    if (r.isEmpty) return const {};
+    final row = r.first;
+    int at(String key) => (row[key] as int?) ?? 0;
 
     return {
-      'messages': await count(tableMessages),
-      'memories': await count(tableVectors),
-      'notes': await count(tableNotes),
-      'documents': await count(tableDocuments),
-      'chunks': await count(tableChunks),
-      'activity': await count(tableActivityLog),
+      'messages': at('messages'),
+      'memories': at('memories'),
+      'notes': at('notes'),
+      'documents': at('documents'),
+      'chunks': at('chunks'),
+      'activity': at('activity'),
     };
   }
 
   Future<void> close() async {
     await _database?.close();
     _database = null;
+    // A closed database means the next one may hold completely different rows
+    // (or may not exist at all, on a wiped install), so nothing memoised here
+    // is safe to keep.
+    _invalidateIndex();
+    invalidatePreferenceCache();
   }
 
   // ------------------------------------------------- float32 <-> BLOB codec

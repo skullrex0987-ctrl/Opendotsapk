@@ -80,6 +80,48 @@ class LlmService {
   /// Fires instead of throwing so the UI can surface a message.
   void Function(String error)? onError;
 
+  /// Drop both callbacks.
+  ///
+  /// [LlmService] is a singleton, so a callback assigned by a screen outlives
+  /// that screen unless something clears it — and the next generation would
+  /// then call `setState` on a disposed widget. Call this from `dispose`.
+  /// Invocations are also guarded (see [_notifyToken]), so a missed call here
+  /// degrades to a logged warning instead of a stalled stream, but clearing is
+  /// still the right thing for a screen to do.
+  void clearCallbacks() {
+    onToken = null;
+    onError = null;
+  }
+
+  /// Invoke [onToken] without letting a dead listener break generation.
+  ///
+  /// The callback runs inside the plugin stream's listener, which is exactly
+  /// where an uncaught exception is worst: it escapes the stream entirely as an
+  /// unhandled zone error, and — because it happens *before* the token is
+  /// forwarded — the consumer's `await for` never receives it either. That is
+  /// the "Thinking…" spinner that never resolves. A `setState()` on a disposed
+  /// widget was enough to trigger it.
+  void _notifyToken(String token) {
+    final cb = onToken;
+    if (cb == null) return;
+    try {
+      cb(token);
+    } catch (e) {
+      Log.w('[LlmService] token callback threw; continuing: $e');
+    }
+  }
+
+  /// Invoke [onError] without letting a dead listener mask the real failure.
+  void _notifyError(String message) {
+    final cb = onError;
+    if (cb == null) return;
+    try {
+      cb(message);
+    } catch (e) {
+      Log.w('[LlmService] error callback threw ($e); reporting: $message');
+    }
+  }
+
   LlmService._();
 
   static LlmService getInstance() => _instance ??= LlmService._();
@@ -102,7 +144,12 @@ class LlmService {
       final cores = await _llm.getCpuCores(performanceOnly: performanceOnly);
       if (cores <= 0) return _threads;
       return cores < _maxInferenceThreads ? cores : _maxInferenceThreads;
-    } catch (_) {
+    } catch (e) {
+      // The device could not be interrogated, so fall back to the configured
+      // thread count rather than failing the load outright — but say so, because
+      // "the phone told us it has 8 cores and we used 4" and "we could not ask"
+      // are different problems with different fixes.
+      Log.w('[LlmService] core count unavailable, using $_threads: $e');
       return _threads;
     }
   }
@@ -162,7 +209,7 @@ class LlmService {
 
       if (error != null) {
         _lastLoadError = error;
-        onError?.call(error);
+        _notifyError(error);
         _isLoaded = false;
         _modelPath = null;
         _activeBackend = null;
@@ -181,7 +228,7 @@ class LlmService {
       );
       return true;
     } catch (e) {
-      onError?.call('Failed to load model: $e');
+      _notifyError('Failed to load model: $e');
       _isLoaded = false;
       _modelPath = null;
       _activeBackend = null;
@@ -237,7 +284,7 @@ class LlmService {
       // message.
       _lastVisionError = 'Vision projector failed: $e';
       Log.e('$_lastVisionError (path: $mmprojPath)');
-      onError?.call(_lastVisionError!);
+      _notifyError(_lastVisionError!);
       return false;
     }
   }
@@ -340,6 +387,13 @@ class LlmService {
       finished = true;
       silenceTimer?.cancel();
       totalTimer?.cancel();
+      // The bridge is about to end, so nothing further will be read from the
+      // plugin stream. Whatever the native side was doing has to be told to
+      // stop: on the timeout paths this is a second abort (harmless — `stop`
+      // swallows its own failures), and on a mid-generation plugin error it is
+      // the only thing that prevents llama.cpp from generating into a void.
+      unawaited(stop());
+      Log.w('[LlmService] generation failed: $error');
       if (!bridge.isClosed) bridge.addError(error);
       if (!bridge.isClosed) bridge.close();
     }
@@ -376,7 +430,7 @@ class LlmService {
           resetSilenceTimer();
 
           emitted++;
-          onToken?.call(token);
+          _notifyToken(token);
           if (!bridge.isClosed) bridge.add(token);
 
           if (emitted >= maxTokens) {
@@ -406,12 +460,33 @@ class LlmService {
         yield token;
       }
     } catch (e) {
-      onError?.call('Generation error: $e');
+      _notifyError('Generation error: $e');
       rethrow;
     } finally {
+      // Capture this *before* the teardown marks the generation finished.
+      //
+      // `finished` is true when the generation ended the way it should: the
+      // plugin's stream completed, the token cap was reached, or a timeout
+      // already aborted the native side. It is false when the `finally` runs
+      // because the *consumer* walked away — the user pressed Stop, or the
+      // widget that was streaming was disposed.
+      //
+      // Cancelling the Dart subscription in that case does nothing to llama.cpp:
+      // per the library docstring the native loop runs until it hits an
+      // end-of-generation token or fills the context window, discarding the
+      // older half as it goes. Nothing was listening, so nobody would ever stop
+      // it — the model would keep generating (and keep the context window
+      // locked) after the screen that asked for it was gone. Aborting here is
+      // the only thing that ends that.
+      //
+      // Deliberately not awaited, matching every other `stop()` in this file: a
+      // teardown that can block on a platform call is the exact failure mode
+      // this method exists to avoid, and `stop` swallows its own errors.
+      final consumerLeft = !finished;
       finished = true;
       silenceTimer?.cancel();
       totalTimer?.cancel();
+      if (consumerLeft) unawaited(stop());
       await sub?.cancel();
       if (!bridge.isClosed) await bridge.close();
       _isGenerating = false;
