@@ -158,7 +158,7 @@ class ModelCatalog {
     id: 'qwen3.5-0.8b-q4_k_m',
     displayName: 'Qwen3.5 0.8B (vision)',
     description: 'Sees images natively and chats. One download, no separate ',
-    kind: ModelKind.llm, // multimodal — usable as both chat and vision
+    kind: ModelKind.vision, // also appears in llms list via isMultimodal
     fileName: 'Qwen3.5-0.8B-Q4_K_M.gguf',
     url: 'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf',
     // 532,517,120 B weights + 204,987,232 B mmproj = 737,504,352 B.
@@ -168,7 +168,7 @@ class ModelCatalog {
     contextSize: 4096,
     ramHint: '~1.1 GB',
     llmArch: 'qwen35',
-    isMultimodal: true, // appears in both LLM and Vision lists
+    isMultimodal: true, // also appears in the LLM list
   );
 
   /// Documented-but-disabled. Kept in the catalogue so the limitation is
@@ -221,7 +221,11 @@ class ModelCatalog {
   );
 
   /// Models the user can pick as the chat brain.
-  static const List<LocalModel> llms = [qwen05b, smolLm2_360m, qwen15b];
+  ///
+  /// Qwen3.5 is included here because it is a multimodal model — the same GGUF
+  /// serves as both LLM and vision backbone, so users should be able to pick it
+  /// as their chat model when they want vision support.
+  static const List<LocalModel> llms = [qwen05b, smolLm2_360m, qwen15b, qwen35_08b];
 
   /// Models the user can pick for image understanding.
   ///
