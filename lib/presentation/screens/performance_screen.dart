@@ -210,7 +210,7 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
                   ),
                 ),
                 Text('$current',
-                    style: const TextStyle(fontSize: 13, width: 24)),
+                    style: const TextStyle(fontSize: 13)),
               ],
             ),
           ],
@@ -220,6 +220,7 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
   }
 
   Future<void> _setMode(String mode) async {
+    final settings = ref.read(settingsProvider);
     await ref.read(settingsProvider.notifier).updateSetting('gpu_offload', mode);
     if (!mounted) return;
 

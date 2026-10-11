@@ -965,7 +965,7 @@ class ModelSelectorDialog extends ConsumerWidget {
     // selected vision model has an llmArch, the chat model must share it — or
     // we refuse to load and tell the user what to do instead of handing the
     // projector to the wrong backbone.
-    final chat = await manager.activeLlm();
+    // Note: chat is already declared above at line 939
     final vision = await manager.activeVision();
     if (vision != null && chat.id != vision.id) {
       final chatArch = chat.llmArch;
@@ -975,9 +975,9 @@ class ModelSelectorDialog extends ConsumerWidget {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                'Architecture mismatch: ${chat.displayName} cannot use ',
-                '${vision.displayName}. Vision projectors only work with their ',
-                'matching LLM. Select ${vision.displayName} as the chat model ',
+                'Architecture mismatch: ${chat.displayName} cannot use '
+                '${vision.displayName}. Vision projectors only work with their '
+                'matching LLM. Select ${vision.displayName} as the chat model '
                 'instead, or pick a vision model for a compatible chat model.',
               ),
             ),
@@ -1279,14 +1279,15 @@ class _ModelPickerBodyState extends ConsumerState<_ModelPickerBody> {
             // Architecture mismatch warning: Qwen3.5 vision requires its
             // matching LLM. SmolLM2 (phi2) + Qwen3.5 projector always fails
             // at the native layer because the projector expects qwen35 context.
+            // Note: Cannot use await in build(), so we check synchronously
             if (_isVisionArchIncompatible(
-                vision: await _manager.activeVision(),
-                chat: await _manager.activeLlm()))
+                vision: _visionId != null ? ModelCatalog.byId(_visionId) : null,
+                chat: _llmId != null ? ModelCatalog.byId(_llmId)! : ModelCatalog.defaultLlm))
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Text(
-                  '${(await _manager.activeLlm()).displayName} cannot use '
-                  '${(await _manager.activeVision())?.displayName ?? "vision model"}. '
+                  '${ModelCatalog.defaultLlm.displayName} cannot use '
+                  '${_visionId != null ? (ModelCatalog.byId(_visionId)?.displayName ?? "vision model") : "vision model"}. '
                   'Vision projectors only work with their matching LLM. '
                   'Select the vision model as the chat model instead.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
