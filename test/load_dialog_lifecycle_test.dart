@@ -64,10 +64,7 @@ void main() {
     });
 
     test('no bare return sits between the dialog opening and the try block', () {
-      final region = body().substring(
-        at('showDialog('),
-        at('try {'),
-      );
+      final region = body().substring(at('showDialog('), at('try {'));
       expect(
         RegExp(r'^\s*return;', multiLine: true).hasMatch(region),
         isFalse,
@@ -102,8 +99,7 @@ void main() {
       );
     });
 
-    test('the loading path is inside a try, so a throw still closes the dialog',
-        () {
+    test('the loading path is inside a try, so a throw still closes the dialog', () {
       final region = body().substring(at('showDialog('));
       expect(region.contains('} catch'), isTrue);
       // And the pop must sit after the catch, so a thrown error cannot skip it.
@@ -112,6 +108,80 @@ void main() {
         greaterThan(at('} catch')),
         reason: 'the spinner must be closed after the catch block',
       );
+    });
+  });
+
+  group('every non-dismissible spinner has an exception-safe close', () {
+    /// The same freeze class as above, elsewhere: a spinner that is only
+    /// closed on the success path. If the awaited work throws, the spinner
+    /// stays and the error surfaces *behind* it.
+    late Map<String, String> sources;
+
+    /// Strips line comments so a pattern quoted inside an explanatory comment
+    /// is not mistaken for live code.
+    String code(String src) => src
+        .split('\n')
+        .map((l) {
+          final i = l.indexOf('//');
+          return i == -1 ? l : l.substring(0, i);
+        })
+        .join('\n');
+
+    setUpAll(() {
+      sources = {
+        'chat_screen.dart': File('lib/presentation/screens/chat_screen.dart')
+            .readAsStringSync(),
+        'performance_screen.dart': File(
+          'lib/presentation/screens/performance_screen.dart',
+        ).readAsStringSync(),
+      };
+    });
+
+    test('no spinner is closed only via a post-await Navigator.of(context).pop()', () {
+      // A late `Navigator.of(context).pop()` is skipped when the context
+      // unmounts during the await, and never runs at all when the awaited work
+      // throws. Both strand the spinner.
+      final offenders = <String>[];
+      for (final entry in sources.entries) {
+        if (RegExp(r'Navigator\.of\(\w+\)\.pop\(\)')
+            .hasMatch(code(entry.value))) {
+          offenders.add(entry.key);
+        }
+      }
+      expect(
+        offenders,
+        isEmpty,
+        reason:
+            'these still close a spinner through a late Navigator.of(...).pop() '
+            '— skipped when the context unmounts or the load throws: $offenders',
+      );
+    });
+
+    test('each showDialog is paired with a captured-navigator close', () {
+      for (final entry in sources.entries) {
+        final src = code(entry.value);
+        final dialogs = RegExp(r'showDialog\(').allMatches(src).length;
+        expect(dialogs, greaterThan(0));
+        // Every spinner close goes through a navigator captured beforehand.
+        final lateCloses = RegExp(r'Navigator\.of\(\w+\)\.pop\(\)')
+            .allMatches(src)
+            .length;
+        final capturedCloses = RegExp(
+          r'(?:navigator|nav)\.canPop\(\)\)\s*(?:navigator|nav)\.pop\(\)',
+        ).allMatches(src).length;
+        expect(
+          lateCloses,
+          0,
+          reason:
+              '${entry.key} has $lateCloses close(s) that can be skipped; '
+              'use a navigator captured before the await',
+        );
+        expect(
+          capturedCloses,
+          greaterThanOrEqualTo(1),
+          reason: '${entry.key} captures no navigator for its spinner',
+        );
+      }
     });
   });
 }

@@ -286,12 +286,24 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
         barrierDismissible: false,
         builder: (_) => const Center(child: CircularProgressIndicator()),
       );
-      final ok = await llm.loadModel(path, gpuLayers: _layersFor(mode));
-      if (ctx.mounted) Navigator.of(ctx).pop();
-      if (ctx.mounted) {
-        ScaffoldMessenger.of(ctx).showSnackBar(
-          SnackBar(content: Text(ok ? 'Model reloaded.' : 'Reload failed.')),
-        );
+      // Captured before the reload so the spinner closes even when the reload
+      // throws — otherwise a failed reload leaves a non-dismissible spinner
+      // covering the screen with the failure only visible behind it.
+      final nav = Navigator.of(ctx);
+      try {
+        final ok = await llm.loadModel(path, gpuLayers: _layersFor(mode));
+        if (nav.canPop()) nav.pop();
+        if (ctx.mounted) {
+          ScaffoldMessenger.of(ctx).showSnackBar(
+            SnackBar(content: Text(ok ? 'Model reloaded.' : 'Reload failed.')),
+          );
+        }
+      } catch (e) {
+        if (nav.canPop()) nav.pop();
+        if (ctx.mounted) {
+          ScaffoldMessenger.of(ctx)
+              .showSnackBar(SnackBar(content: Text('Reload failed: $e')));
+        }
       }
       setState(() {});
     }

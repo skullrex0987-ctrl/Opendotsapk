@@ -344,11 +344,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         builder: (_) => const Center(child: CircularProgressIndicator()),
       );
 
+      // Captured before the ingest so every exit path can close the spinner.
+      // `if (mounted) Navigator.of(context).pop()` skipped the close whenever
+      // the user left the screen mid-ingest, leaving a non-dismissible spinner
+      // stranded on the navigator they came back to.
+      final nav = Navigator.of(context);
+
       try {
         final doc = await DocumentService.instance.ingest(path);
 
         if (doc.textLayerMissing) {
-          if (mounted) Navigator.of(context).pop();
+          if (nav.canPop()) nav.pop();
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -388,7 +394,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           );
         }
 
-        if (mounted) Navigator.of(context).pop();
+        if (nav.canPop()) nav.pop();
         if (!mounted) return;
 
         setState(() => _attachedDocs.add(doc));
@@ -401,7 +407,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           ),
         );
       } catch (e) {
-        if (mounted) Navigator.of(context).pop();
+        if (nav.canPop()) nav.pop();
         rethrow;
       }
     } catch (e) {
@@ -1201,32 +1207,44 @@ class ModelSelectorDialog extends ConsumerWidget {
         builder: (_) => const Center(child: CircularProgressIndicator()),
       );
 
-      final ok = await ref
-          .read(llmServiceProvider)
-          .loadModel(
-            path,
-            gpuLayers: (await GpuService.detect()).recommendedGpuLayers,
-          );
-      if (context.mounted) Navigator.of(context).pop();
-      if (!context.mounted) return;
+      // Captured before the load so the spinner can be closed from the catch
+      // below. Without this, a loadModel that throws leaves a
+      // non-dismissible spinner on screen while the snackbar reports the
+      // failure underneath it — the app looks stuck rather than failed.
+      final nav = Navigator.of(context);
+      try {
+        final ok = await ref
+            .read(llmServiceProvider)
+            .loadModel(
+              path,
+              gpuLayers: (await GpuService.detect()).recommendedGpuLayers,
+            );
+        if (nav.canPop()) nav.pop();
+        if (!context.mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            ok ? 'Loaded ${path.split('/').last}' : 'Failed to load that GGUF',
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              ok
+                  ? 'Loaded ${path.split('/').last}'
+                  : 'Failed to load that GGUF',
+            ),
           ),
-        ),
-      );
-      // Clear model_path so the chip does not keep showing the external path
-      // after a storage load. The picker will read "Nothing loaded" until the
-      // user taps Load again with a catalog model selected.
-      if (context.mounted) {
-        await ref
-            .read(settingsProvider.notifier)
-            .updateSetting('model_path', null);
-        await ref
-            .read(settingsProvider.notifier)
-            .updateSetting('active_llm_id', null);
+        );
+        // Clear model_path so the chip does not keep showing the external path
+        // after a storage load. The picker will read "Nothing loaded" until the
+        // user taps Load again with a catalog model selected.
+        if (context.mounted) {
+          await ref
+              .read(settingsProvider.notifier)
+              .updateSetting('model_path', null);
+          await ref
+              .read(settingsProvider.notifier)
+              .updateSetting('active_llm_id', null);
+        }
+      } catch (e) {
+        if (nav.canPop()) nav.pop();
+        rethrow;
       }
     } catch (e) {
       Log.w('load from storage failed: $e');
