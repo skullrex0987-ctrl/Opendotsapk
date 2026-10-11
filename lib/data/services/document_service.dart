@@ -172,18 +172,16 @@ class DocumentService {
   /// bytes and never inflated, so it found nothing in any PDF that compressed
   /// its content — which is almost all of them.
   ///
-  /// The extractor itself never throws; an empty result means there was no text
-  /// layer, which is the normal case for a scan.
+  /// Returns an empty string when there is no text layer. That is **not** an
+  /// error and must not throw: a scanned PDF is a perfectly normal file. The
+  /// caller flags it via `textLayerMissing` so the UI can explain it, and
+  /// throwing here would make a scan look like a corrupt document.
   Future<String> _readPdf(File file, String name) async {
     final bytes = await file.readAsBytes();
     final text = extractPdfText(bytes);
 
     if (text.trim().isEmpty) {
       Log.w('pdf "$name" has no text layer (${bytes.length} bytes)');
-      throw const DocumentException(
-        'That PDF has no text layer — it is most likely a scan. Paste the '
-        'text instead.',
-      );
     }
     return text;
   }

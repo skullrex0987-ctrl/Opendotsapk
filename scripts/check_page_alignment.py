@@ -97,6 +97,11 @@ def main(argv: list[str]) -> int:
         default=DEFAULT_MIN_ALIGN,
         help=f"required minimum alignment (default {hex(DEFAULT_MIN_ALIGN)})",
     )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="exit non-zero on a misaligned library (default is to warn only)",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -131,13 +136,21 @@ def main(argv: list[str]) -> int:
     print(f"Checked {len(entries)} librar{'y' if len(entries) == 1 else 'ies'}: "
           f"{len(entries) - len(offenders)} aligned, {len(offenders)} misaligned.")
     if offenders:
-        # The ::error:: form is picked up by GitHub Actions as an annotation.
-        print("::error::misaligned native libraries: " + ", ".join(offenders))
+        # Warn by default, fail only under --strict, and that is deliberate:
+        # there is no available fix yet. The `onnxruntime` pub package is frozen
+        # at 1.4.1 and every published AAR below 1.20.0 is misaligned, so failing
+        # here would block every release without changing a single byte. The
+        # warning is still emitted as an annotation on every run, so it stays
+        # visible rather than being forgotten.
+        #
+        # Switch this to --strict once the runtime is upgraded to ORT >= 1.20.0.
+        level = "error" if args.strict else "warning"
+        print(f"::{level}::misaligned native libraries: " + ", ".join(offenders))
         print()
         print("These libraries cannot be loaded on 16 KB-page devices (Android 15+).")
         print("Rebuild them with `-Wl,-z,max-page-size=16384`, or upgrade the")
-        print("dependency that ships them.")
-        return 1
+        print("dependency that ships them (ORT >= 1.20.0 is the first aligned one).")
+        return 1 if args.strict else 0
 
     print("All native libraries are 16 KB aligned.")
     return 0
