@@ -1036,21 +1036,18 @@ class ModelSelectorDialog extends ConsumerWidget {
       return;
     }
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(child: CircularProgressIndicator()),
-    );
-
-    var ok = false;
-    var message = 'Failed to load model';
-
     // Architecture check: a vision projector must match the chat model's arch.
     // Qwen3.5 carries vision in its own architecture (qwen35), so if the
     // selected vision model has an llmArch, the chat model must share it — or
     // we refuse to load and tell the user what to do instead of handing the
     // projector to the wrong backbone.
-    // Note: chat is already declared above at line 939
+    //
+    // Every refusal below has to happen **before** the progress dialog opens.
+    // It used to open first, and each guard `return`ed with the dialog still
+    // up: a `barrierDismissible: false` spinner that cannot be tapped away, so
+    // a mismatched pairing left the app frozen with no way out short of
+    // force-closing. That is the "I tap Load over and over and it never
+    // loads" report — the load never started, but the screen looked busy.
     final vision = await manager.activeVision();
     if (vision != null && chat.id != vision.id) {
       final chatArch = chat.llmArch;
@@ -1072,19 +1069,23 @@ class ModelSelectorDialog extends ConsumerWidget {
       }
     }
 
-    if (!await manager.isInstalled(chat)) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'No chat model downloaded yet. '
-              'Open Settings -> Models and pick one.',
-            ),
-          ),
-        );
-      }
-      return;
-    }
+    // Everything that can refuse has now refused. Only the genuinely slow work
+    // (reading a multi-hundred-megabyte GGUF into the native runtime) happens
+    // behind the spinner, so the dialog can no longer outlive its own guard.
+    //
+    // The navigator is captured *before* the dialog opens and used to close it
+    // afterwards. Reaching for `Navigator.of(context)` at the end instead means
+    // an unmounted context (rotate the phone mid-load, or leave the screen)
+    // skips the pop and strands a spinner nobody can dismiss.
+    final navigator = Navigator.of(context);
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    var ok = false;
+    var message = 'Failed to load model';
 
     try {
       final layers = await GpuService.layersForMode(
@@ -1158,7 +1159,10 @@ class ModelSelectorDialog extends ConsumerWidget {
       message = 'Error: $e';
     }
 
-    if (context.mounted) Navigator.of(context).pop(); // progress dialog
+    // Close the spinner through the captured navigator. Guarded because the
+    // route may already be gone if something popped it for us, and popping
+    // twice throws.
+    if (navigator.canPop()) navigator.pop();
     if (!context.mounted) return;
 
     ScaffoldMessenger.of(context)
