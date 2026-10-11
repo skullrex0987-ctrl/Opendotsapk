@@ -62,6 +62,14 @@ class SecureScreen {
 }
 
 class BiometricGate extends StatefulWidget {
+  /// Suppress the re-lock for an expected pause — a file picker or a
+  /// permission dialog — from a call site that does not own the gate.
+  ///
+  /// Public forwarder: the timestamp and the lifecycle checks live on the
+  /// private state class, which call sites cannot name.
+  static void suppressReLock([Duration window = const Duration(seconds: 3)]) =>
+      _BiometricGateState.suppressReLock(window);
+
   final Widget child;
 
   /// Whether the user turned the lock on. When false the gate is transparent.

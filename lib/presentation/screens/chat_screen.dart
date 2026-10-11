@@ -21,6 +21,7 @@ import '../../data/services/cloud_service.dart';
 import '../../data/services/model_manager.dart';
 import '../../data/services/embedding_service.dart';
 import '../../data/services/router_service.dart';
+import '../widgets/biometric_gate.dart';
 import '../../domain/models/models.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
@@ -315,6 +316,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   /// instead of silently attaching an image that will be ignored.
   Future<void> _pickImage() async {
     try {
+      // The picker pauses the activity, which would otherwise re-engage the app
+      // lock over it. Tell the gate this pause is expected.
+      BiometricGate.suppressReLock();
       final picker = ImagePicker();
       final file = await picker.pickImage(
         source: ImageSource.gallery,
@@ -352,6 +356,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   /// Pick and ingest a document, then hand it to the memory store.
   Future<void> _pickDocument() async {
     try {
+      // Same reason as the image picker: this pause is expected, not the user
+      // leaving the app.
+      BiometricGate.suppressReLock();
       final result = await FilePicker.pickFiles(type: FileType.any);
       final path = result.isEmpty ? null : result.first.path;
       if (path == null || !mounted) return;
@@ -477,13 +484,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final llmService = ref.read(llmServiceProvider);
     final settings = ref.read(settingsProvider);
     final router = RouterService.instance;
+    // A one-off "send just this one to the cloud" is consumed exactly once, so
+    // it applies to this message and not the next. It never overrides private
+    // mode — `routeConfigForTurn` guards that.
+    final sendToCloudOnce = ref.read(cloudOnceProvider.notifier).consume();
+
     final decision = router.decide(
       prompt: '$display$docCtx',
-      config: RoutingConfig(
+      config: routeConfigForTurn(
         mode: '${settings['cloud_mode'] ?? 'auto'}',
         privateMode: settings['private_mode'] as bool? ?? false,
         preferLocalOnMetered:
             settings['prefer_local_metered'] as bool? ?? true,
+        sendToCloudOnce: sendToCloudOnce,
       ),
       hasImages: hasImages,
       localVisionReady: llmService.isVisionLoaded,
@@ -1000,6 +1013,9 @@ class ModelSelectorDialog extends ConsumerWidget {
     // Pick any GGUF from the device and bind it directly — useful for models
     // the catalog does not know about.
     try {
+      // Same reason as the image picker: this pause is expected, not the user
+      // leaving the app.
+      BiometricGate.suppressReLock();
       final result = await FilePicker.pickFiles(type: FileType.any);
       final path = result.isEmpty ? null : result.first.path;
       if (path == null || !context.mounted) return;
