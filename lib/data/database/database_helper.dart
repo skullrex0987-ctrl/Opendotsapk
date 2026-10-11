@@ -501,6 +501,13 @@ class DatabaseHelper {
           Log.w('skipping unreadable memory row: ${decoded.reason}');
           continue;
         }
+        // Deliberately a positive check rather than relying on flow promotion
+        // after the `continue` above: the rest of this file pattern-matches on
+        // the sealed result, and this form compiles everywhere.
+        if (decoded is! DecryptedValue) {
+          Log.w('skipping memory row with an unexpected decrypt result');
+          continue;
+        }
         final text = decoded.value;
         final tokens = TextUtils.tokenize(text);
 
