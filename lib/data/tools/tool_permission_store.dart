@@ -9,6 +9,8 @@ library;
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/utils/log.dart';
+
 enum ToolPermission {
   allow,
   ask,
@@ -48,10 +50,11 @@ class ToolPermissionStore {
             ? defaultFor(name)
             : ToolPermission.parse(raw);
       }
-    } catch (_) {
+    } catch (e) {
       // A read failure must not leave a tool unrestricted. Falling back to the
       // defaults (all `ask`) is the safe direction: worst case the user is
       // prompted more often than necessary.
+      Log.w('ToolPermissionStore.load failed, defaulting to "ask": $e');
       for (final name in toolNames) {
         _cache.putIfAbsent(name, () => defaultFor(name));
       }
@@ -68,9 +71,15 @@ class ToolPermissionStore {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('$_prefix$toolName', permission.wire);
-    } catch (_) {
+    } catch (e) {
       // Keep the in-memory value: the session should honour the change even if
       // persistence failed, and the caller is told via the return of the UI.
+      // Logged, because "I allowed this tool and it still asks me every time"
+      // is a support question with no other visible cause.
+      Log.w(
+        'ToolPermissionStore: could not persist "$toolName" → '
+        '${permission.wire}; it applies to this session only: $e',
+      );
     }
   }
 }

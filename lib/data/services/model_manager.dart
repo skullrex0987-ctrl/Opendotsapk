@@ -1224,14 +1224,20 @@ Future<int> _lengthOrZero(File f) async {
 Future<void> _deleteQuietly(File f) async {
   try {
     if (await f.exists()) await f.delete();
-  } catch (_) {}
+  } catch (e) {
+    // Best-effort by name, but never silent: a `.part` that cannot be deleted
+    // because the volume is full is the one case where "clean restart" silently
+    // becomes "resume a corrupt file", and the user has no other way to see it.
+    Log.w('ModelManager: could not delete ${f.path}: $e');
+  }
 }
 
 Future<_PartMeta?> _readMeta(File meta) async {
   try {
     if (!await meta.exists()) return null;
     return _PartMeta.fromJson(await meta.readAsString());
-  } catch (_) {
+  } catch (e) {
+    Log.w('ModelManager: unreadable validator sidecar ${meta.path}: $e');
     return null;
   }
 }
@@ -1239,7 +1245,15 @@ Future<_PartMeta?> _readMeta(File meta) async {
 Future<void> _writeMeta(File meta, _PartMeta data) async {
   try {
     await meta.writeAsString(jsonEncode(data.toJson()), flush: true);
-  } catch (_) {}
+  } catch (e) {
+    // Losing the sidecar only costs a clean restart on the next attempt — but
+    // it is worth saying so, because the resume path looks inexplicable without
+    // it.
+    Log.w(
+      'ModelManager: could not persist validators to ${meta.path}; the next '
+      'attempt will restart the download instead of resuming: $e',
+    );
+  }
 }
 
 /// Parses the Accept-Ranges header into a tri-state: true/false/null.

@@ -171,14 +171,22 @@ class _CacheEntry {
 /// The real filesystem probe: one `stat` where `File.exists()` + `length()`
 /// used to cost two.
 ///
-/// `FileStat.stat` raises `FileSystemException` for a missing path, which is the
-/// overwhelmingly common answer in the model catalogue, so it is caught and
-/// turned into [FilePresence.missing] here rather than at every call site. Any
-/// other failure (permission denied, a path that is not a regular file) also
-/// degrades to "missing", matching what `File.exists()` would have reported.
+/// `FileStat.stat` does **not** throw for a path that is not there — it returns
+/// a stat whose [FileSystemEntityType.type] is
+/// [FileSystemEntityType.notFound] and whose `size` is `-1`. Treating that as
+/// "exists, length -1" would make every undownloaded model report as present,
+/// so the type is checked explicitly. It is exactly what `File.exists()`
+/// answered, and it halves the syscalls.
+///
+/// Anything genuinely exceptional (a permission error, a path the OS refuses to
+/// stat) throws, and is degraded to [FilePresence.missing] here rather than at
+/// every call site — the same direction `File.exists()` would have reported.
 Future<FilePresence> probeFilePresence(String path) async {
   try {
     final stat = await FileStat.stat(path);
+    if (stat.type == FileSystemEntityType.notFound) {
+      return FilePresence.missing;
+    }
     return FilePresence(exists: true, length: stat.size);
   } catch (_) {
     return FilePresence.missing;

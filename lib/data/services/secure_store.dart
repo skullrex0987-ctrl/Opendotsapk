@@ -232,7 +232,11 @@ class SecureStore {
     try {
       final decoded = Map<String, dynamic>.from(jsonDecode(raw) as Map);
       return decoded.map((k, v) => MapEntry(k, '$v'));
-    } catch (_) {
+    } catch (e) {
+      // A corrupt config blob costs the user their custom base URL and nothing
+      // else — no secret is lost — but silently returning "no config" makes the
+      // provider appear to ignore what they typed.
+      Log.w('SecureStore: unreadable config for "$providerId": $e');
       return const {};
     }
   }

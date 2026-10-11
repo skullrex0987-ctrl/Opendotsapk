@@ -177,8 +177,9 @@ class McpService {
         authToken: authToken,
         sessionId: sessionId,
       );
-    } catch (_) {
-      // Optional.
+    } catch (e) {
+      // Optional per the spec: some servers complete the handshake without it.
+      Log.d('mcp: ${server.id} ignored notifications/initialized: $e');
     }
 
     final listed = await _rpc(

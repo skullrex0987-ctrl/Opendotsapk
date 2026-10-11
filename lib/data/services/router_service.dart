@@ -403,8 +403,13 @@ class RouterService {
           : await InternetAddress.lookup(host)
                 .timeout(const Duration(seconds: 3));
       isOnline = result.isNotEmpty && result.first.rawAddress.isNotEmpty;
-    } catch (_) {
+    } catch (e) {
+      // A failed lookup means "assume offline": routing to the on-device model
+      // is always safe, while assuming online could send a private turn to the
+      // network. Logged so a persistent failure is distinguishable from being
+      // genuinely offline.
       isOnline = false;
+      Log.w('router: connectivity probe failed, assuming offline: $e');
     }
     return isOnline;
   }

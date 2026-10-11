@@ -26,6 +26,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../data/database/database_helper.dart';
 import '../../core/utils/json_extract.dart';
+import '../../core/utils/log.dart';
 import '../../data/services/llm_service.dart';
 import '../../data/tools/tool_permission_store.dart';
 import '../../data/tools/tool_registry.dart';
@@ -241,8 +242,12 @@ Now answer the user's question.''';
         timestamp: DateTime.now().millisecondsSinceEpoch,
         permissionLevel: permissionLevel,
       );
-    } catch (_) {
-      // Logging must never break the user's actual request.
+    } catch (e) {
+      // Logging must never break the user's actual request. Logged anyway: a
+      // tool call that ran but left no trace in Activity is the difference
+      // between "the app lied about running it" and "we cannot show you what
+      // happened", and only the second is fixable.
+      Log.w('AgentOrchestrator: could not record activity for "$toolName": $e');
     }
   }
 }
