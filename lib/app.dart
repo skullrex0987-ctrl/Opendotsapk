@@ -6,6 +6,7 @@ import 'presentation/screens/onboarding_screen.dart';
 import 'presentation/screens/main_screen.dart';
 import 'presentation/widgets/biometric_gate.dart';
 import 'core/constants/app_constants.dart';
+import 'core/theme/app_theme.dart';
 
 /// Root application widget.
 class LocalMindApp extends StatelessWidget {
@@ -16,27 +17,9 @@ class LocalMindApp extends StatelessWidget {
     return MaterialApp(
       title: AppConstants.appName,
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: AppConstants.primaryColor,
-          brightness: Brightness.dark,
-        ),
-        appBarTheme: const AppBarTheme(centerTitle: true, elevation: 0),
-        cardTheme: CardThemeData(
-          elevation: 2,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-        inputDecorationTheme: InputDecorationTheme(
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 12,
-          ),
-        ),
-      ),
+      // One theme for the whole app — colours, type, shape, and component
+      // defaults all live in AppTheme so no screen invents its own.
+      theme: AppTheme.dark,
       home: const SplashScreen(),
     );
   }
