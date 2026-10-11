@@ -243,10 +243,104 @@ final settingsProvider = StateNotifierProvider<SettingsNotifier, Map<String, dyn
   return SettingsNotifier();
 });
 
+/// The privacy facts a cloud consent step must state.
+///
+/// Kept in one place so the consent UI, the code that decides whether consent
+/// is needed, and any test all describe exactly the same data. If a new kind of
+/// payload is added to a cloud request, it must be listed here or the consent
+/// text becomes a lie.
+class CloudPrivacy {
+  CloudPrivacy._();
+
+  /// What actually leaves the device when a turn is sent to a cloud provider.
+  static const List<String> leavesDevice = [
+    'the text of your prompt',
+    'your recent conversation history',
+    'the text of any attached document',
+    'any images you attach',
+  ];
+
+  /// Plain-English body for the opt-in dialog naming the destination provider.
+  static String consentBody(String providerDisplayName) {
+    final items = leavesDevice.map((e) => '  \u2022  $e').join('\n');
+    return 'If you turn cloud on, the following will be sent over the '
+        'internet to $providerDisplayName:\n\n$items\n\n'
+        'Once sent, it is handled under that provider\'s own privacy policy, '
+        'not this app\'s. Nothing is sent until you agree, the on-device model '
+        'stays the default, and you can withdraw this at any time.';
+  }
+}
+
+/// Whether the stored consent already covers [providerId].
+///
+/// Consent is bound to a specific destination: switching the active provider
+/// makes this return false again, which is what forces the opt-in step to be
+/// shown a second time. Consent is *not* inherited by a new provider.
+bool cloudConsentGranted(Map<String, dynamic> settings, String? providerId) {
+  if (providerId == null || providerId.isEmpty) return false;
+  final consented = settings['cloud_consent_provider'];
+  return consented is String && consented == providerId;
+}
+
+/// One-shot "send the next message to the cloud, just this once" flag.
+///
+/// This is the per-message affordance. It is deliberately *state* rather than a
+/// setting: it applies to exactly one outgoing turn and is consumed as that
+/// turn is sent, so a single tap can never leak more than one message. It never
+/// overrides private mode — see [routeConfigForTurn].
+final cloudOnceProvider =
+    StateNotifierProvider<CloudOnceNotifier, bool>((ref) {
+  return CloudOnceNotifier();
+});
+
+class CloudOnceNotifier extends StateNotifier<bool> {
+  CloudOnceNotifier() : super(false);
+
+  /// Arm the override for the next message.
+  void armForNextMessage() => state = true;
+
+  /// Read and clear the flag. Returns true when a one-shot cloud send was armed.
+  bool consume() {
+    final armed = state;
+    if (armed) state = false;
+    return armed;
+  }
+}
+
+/// Enforces that a destructive action is confirmed twice.
+///
+/// A single dialog with one confirm button is one step. This gate refuses to
+/// report completion unless the caller first recorded the first step, so "Erase
+/// all data" cannot be triggered by a stray tap or a mis-wired single dialog —
+/// the second confirmation only counts if the first genuinely happened.
+class TwoStepConfirm {
+  bool _firstDone = false;
+
+  /// Whether the first confirmation has been given and not yet consumed.
+  bool get awaitingSecond => _firstDone;
+
+  /// Record the first confirmation.
+  void confirmFirst() => _firstDone = true;
+
+  /// Record the second confirmation. Returns true only when the first step had
+  /// already been taken; always clears the gate afterwards so it cannot be
+  /// reused for a second erase without going through both steps again.
+  bool confirmSecond() {
+    final ok = _firstDone;
+    _firstDone = false;
+    return ok;
+  }
+
+  /// Abandon the flow (e.g. the user cancelled at the second dialog).
+  void cancel() => _firstDone = false;
+}
+
 class SettingsNotifier extends StateNotifier<Map<String, dynamic>> {
-  final DatabaseHelper _db = DatabaseHelper.instance;
-  
-  SettingsNotifier() : super({
+
+  /// The conservative first-run defaults. Extracted so "Erase all data" can
+  /// restore exactly this state without a second copy of the map drifting from
+  /// the constructor's.
+  static Map<String, dynamic> _defaults() => {
     'context_size': 2048,
     'personality': 'professional',
     'tts_enabled': true,
@@ -261,6 +355,11 @@ class SettingsNotifier extends StateNotifier<Map<String, dynamic>> {
     'active_cloud_provider': null,
     'active_cloud_model': null,
 
+    // Cloud consent, bound to a specific provider id. Null means "not granted
+    // for anything", so a fresh install never routes to the cloud without the
+    // opt-in step.
+    'cloud_consent_provider': null,
+
     // Security
     'biometric_lock': false,
 
@@ -270,7 +369,11 @@ class SettingsNotifier extends StateNotifier<Map<String, dynamic>> {
 
     // First-run
     'onboarding_done': false,
-  }) {
+  };
+
+  final DatabaseHelper _db = DatabaseHelper.instance;
+
+  SettingsNotifier() : super(_defaults()) {
     _loadSettings();
   }
   
@@ -310,6 +413,7 @@ class SettingsNotifier extends StateNotifier<Map<String, dynamic>> {
       'active_cloud_model',
       'model_path',
       'gpu_offload',
+      'cloud_consent_provider',
     ]) {
       final raw = await _db.getPreference(key);
       if (raw != null && raw.isNotEmpty) {
@@ -317,12 +421,24 @@ class SettingsNotifier extends StateNotifier<Map<String, dynamic>> {
       }
     }
 
+    // Mirror private mode onto the router *before* any probe runs, so the
+    // probe is correctly skipped when private mode is on (a DNS lookup is a
+    // network call, and private mode promises none).
+    RouterService.instance.privateMode = state['private_mode'] as bool? ?? false;
+
     // Keep the router's view of connectivity fresh.
     await RouterService.instance.probeConnectivity();
   }
-  
+
   Future<void> updateSetting(String key, dynamic value) async {
     state = Map.from(state)..[key] = value;
+
+    // Private mode is also a router concern: flipping it must take effect
+    // immediately so the connectivity probe starts/stops respecting it.
+    if (key == 'private_mode') {
+      RouterService.instance.privateMode = value == true;
+    }
+
     if (value is String) {
       await _db.savePreference(key, value);
     } else if (value is int) {
@@ -330,5 +446,25 @@ class SettingsNotifier extends StateNotifier<Map<String, dynamic>> {
     } else if (value is bool) {
       await _db.savePreference(key, value.toString());
     }
+  }
+
+  /// Record that the user consented to sending data to [providerId]. Persisted,
+  /// so the opt-in step is shown once per destination rather than on every
+  /// launch. Consent is bound to that id: if the destination provider later
+  /// changes, [cloudConsentGranted] no longer matches and the step is shown
+  /// again.
+  Future<void> grantCloudConsent(String providerId) =>
+      updateSetting('cloud_consent_provider', providerId);
+
+  /// Withdraw consent for the current destination. An empty value is treated as
+  /// "no consent" on the next load, so the opt-in step is shown again.
+  Future<void> revokeCloudConsent() =>
+      updateSetting('cloud_consent_provider', '');
+
+  /// Restore the conservative first-run defaults after a full erase, so the app
+  /// presents a clean first-run state without a relaunch.
+  Future<void> resetToDefaults() async {
+    state = _defaults();
+    RouterService.instance.privateMode = false;
   }
 }

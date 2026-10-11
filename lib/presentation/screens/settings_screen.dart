@@ -1,11 +1,20 @@
 /// Settings screen
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/providers.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/utils/log.dart';
+import '../../data/database/database_helper.dart';
+import '../../data/services/secure_store.dart';
+import '../../domain/models/cloud_provider.dart';
 import 'models_screen.dart';
 import 'performance_screen.dart';
 import 'cloud_screen.dart';
+import 'onboarding_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -50,6 +59,18 @@ class SettingsScreen extends ConsumerWidget {
           const SectionTitle(title: 'Context'),
           ContextSizeSelector(current: settings['context_size'] as int?),
           
+          const Divider(),
+
+          // Cloud privacy — the one-time opt-in, and where to withdraw it.
+          const SectionTitle(title: 'Privacy'),
+          const CloudPrivacySection(),
+
+          const Divider(),
+
+          // Destructive: erase everything and return to first run.
+          const SectionTitle(title: 'Data'),
+          const EraseDataSection(),
+
           const Divider(),
           
           // About
@@ -297,6 +318,298 @@ class AboutSection extends StatelessWidget {
         ),
       ],
     );
+  }
+}
+
+/// One-time cloud consent.
+///
+/// Names the destination provider and states exactly what leaves the device.
+/// The opt-in is recorded against a specific provider id, so it is shown once
+/// per destination and again if the user switches to a different one.
+class CloudPrivacySection extends ConsumerWidget {
+  const CloudPrivacySection({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(settingsProvider);
+    final providerId = settings['active_cloud_provider'] as String?;
+    final provider = providerId == null ? null : CloudCatalog.byId(providerId);
+    final granted = cloudConsentGranted(settings, providerId);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(granted ? Icons.cloud_done : Icons.cloud_off, size: 18),
+                const SizedBox(width: 8),
+                const Text('Cloud use',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (provider == null)
+              const Text(
+                'No cloud provider is selected, so nothing is ever sent off '
+                'this device. To allow cloud use, add a provider under Cloud '
+                'Models; you will be asked to confirm exactly what is shared '
+                'before the first request.',
+                style: TextStyle(fontSize: 12, height: 1.4),
+              )
+            else ...[
+              Text(
+                granted
+                    ? 'Cloud is enabled for ${provider.displayName}.'
+                    : 'Cloud is off for ${provider.displayName}. Nothing is '
+                        'sent until you confirm.',
+                style: const TextStyle(fontSize: 12, height: 1.4),
+              ),
+              const SizedBox(height: 10),
+              if (!granted)
+                FilledButton(
+                  onPressed: () => _confirmConsent(context, ref, provider),
+                  child: Text('Enable cloud for ${provider.displayName}'),
+                )
+              else
+                OutlinedButton(
+                  onPressed: () {
+                    ref
+                        .read(settingsProvider.notifier)
+                        .revokeCloudConsent();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Cloud consent withdrawn.')),
+                    );
+                  },
+                  child: const Text('Withdraw consent'),
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Show the single opt-in dialog and persist consent on agreement.
+  Future<void> _confirmConsent(
+    BuildContext context,
+    WidgetRef ref,
+    CloudProvider provider,
+  ) async {
+    final agreed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Send data to ${provider.displayName}?'),
+        content: SingleChildScrollView(
+          child: Text(
+            CloudPrivacy.consentBody(provider.displayName),
+            style: const TextStyle(fontSize: 13, height: 1.45),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('I agree'),
+          ),
+        ],
+      ),
+    );
+
+    if (agreed != true) return;
+    await ref.read(settingsProvider.notifier).grantCloudConsent(provider.id);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Cloud enabled for ${provider.displayName}.')),
+    );
+  }
+}
+
+/// "Erase all data" — two-step confirmation, then a full wipe.
+///
+/// The second confirmation is a real second step (a separate dialog that only
+/// accepts once the first has been given, guarded by [TwoStepConfirm]), not a
+/// single dialog with two buttons.
+class EraseDataSection extends ConsumerStatefulWidget {
+  const EraseDataSection({super.key});
+
+  @override
+  ConsumerState<EraseDataSection> createState() => _EraseDataSectionState();
+}
+
+class _EraseDataSectionState extends ConsumerState<EraseDataSection> {
+  final TwoStepConfirm _confirm = TwoStepConfirm();
+  bool _busy = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: ListTile(
+        leading: _busy
+            ? const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.delete_forever, color: Colors.redAccent),
+        title: const Text('Erase all data'),
+        subtitle: const Text(
+          'Delete chat history, memories, notes, documents, API keys and '
+          'settings, and return to first run.',
+          style: TextStyle(fontSize: 11),
+        ),
+        enabled: !_busy,
+        onTap: _startErase,
+      ),
+    );
+  }
+
+  Future<void> _startErase() async {
+    // ---- Step 1: what will be erased ------------------------------------
+    final first = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Erase all data?'),
+        content: const Text(
+          'This permanently deletes everything LocalMind stores on this '
+          'device:\n\n'
+          '  \u2022  all chat messages\n'
+          '  \u2022  memories and notes\n'
+          '  \u2022  ingested documents\n'
+          '  \u2022  saved cloud API keys\n'
+          '  \u2022  all settings\n\n'
+          'The app will return to a fresh first-run state.',
+          style: TextStyle(fontSize: 13, height: 1.45),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+    if (first != true) {
+      _confirm.cancel();
+      return;
+    }
+    _confirm.confirmFirst();
+
+    // ---- Step 2: the real second confirmation ---------------------------
+    var deleteModels = false;
+    final second = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Last chance — this cannot be undone'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Are you sure? Once erased, this data cannot be recovered.',
+                style: TextStyle(fontSize: 13, height: 1.4),
+              ),
+              const SizedBox(height: 8),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                value: deleteModels,
+                onChanged: (v) => setLocal(() => deleteModels = v ?? false),
+                title: const Text('Also delete downloaded models',
+                    style: TextStyle(fontSize: 13)),
+                subtitle: Text(
+                  'Frees disk space. Files under '
+                  '"${AppConstants.modelsDirName}/" in this app\'s documents '
+                  'folder; they can be downloaded again.',
+                  style: const TextStyle(fontSize: 11),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: Colors.red[700]),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Erase everything'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    // The gate only opens when both steps genuinely happened.
+    if (second != true || !_confirm.confirmSecond()) {
+      _confirm.cancel();
+      return;
+    }
+
+    await _runErase(deleteModels);
+  }
+
+  Future<void> _runErase(bool deleteModels) async {
+    setState(() => _busy = true);
+    try {
+      // Rows first: messages, memories, notes, documents, activity log and
+      // preferences. This is the existing wipe(); it was previously uncalled.
+      await DatabaseHelper.instance.wipe();
+
+      // Secrets in the platform keystore: the cloud API keys and the database
+      // key that encrypted the (now deleted) rows.
+      await SecureStore.instance.wipe();
+
+      // shared_preferences: active model selections and similar.
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+
+      // Optionally the downloaded GGUFs, under <app documents>/models/.
+      if (deleteModels) {
+        try {
+          final docs = await getApplicationDocumentsDirectory();
+          final models =
+              Directory('${docs.path}/${AppConstants.modelsDirName}');
+          if (await models.exists()) {
+            await models.delete(recursive: true);
+          }
+          Log.i('erased downloaded models from ${models.path}');
+        } catch (e) {
+          // Not fatal: the data itself is gone; only disk space was not freed.
+          Log.w('could not delete downloaded models: $e');
+        }
+      }
+
+      // Back to a clean first-run state in memory, then on screen.
+      await ref.read(settingsProvider.notifier).resetToDefaults();
+      ref.invalidate(chatMessagesProvider);
+      ref.invalidate(activityLogProvider);
+
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const OnboardingScreen()),
+        (route) => false,
+      );
+    } catch (e) {
+      Log.e('erase all data failed: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erase failed: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 }
 

@@ -6,6 +6,7 @@ import 'package:workmanager/workmanager.dart';
 import 'app.dart';
 import 'core/security/crypto_box.dart';
 import 'core/utils/log.dart';
+import 'data/database/database_helper.dart';
 import 'data/services/router_service.dart';
 import 'data/services/secure_store.dart';
 
@@ -67,8 +68,22 @@ Future<void> main() async {
   // Connectivity matters for the router: offline must force the local model.
   // A DNS probe is used rather than an HTTP request so it costs no data and
   // reveals no request metadata.
+  //
+  // Private mode promises that *nothing* leaves the device, and a DNS lookup is
+  // still a network call. The persisted setting is read here, before any probe,
+  // so the promise holds from the very first launch: in private mode the probe
+  // is skipped outright and the router keeps its last known state. The router
+  // also refuses the probe itself, so this is defence in depth rather than the
+  // only guard.
   try {
-    await RouterService.instance.probeConnectivity();
+    final privateMode =
+        (await DatabaseHelper.instance.getPreference('private_mode')) == 'true';
+    RouterService.instance.privateMode = privateMode;
+    if (privateMode) {
+      Log.i('private mode is on — skipping the startup connectivity probe');
+    } else {
+      await RouterService.instance.probeConnectivity();
+    }
   } catch (_) {
     // Defaults to online; the router re-checks later.
   }

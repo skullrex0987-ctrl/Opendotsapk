@@ -76,6 +76,42 @@ class RoutingConfig {
   });
 }
 
+/// Build the [RoutingConfig] for a single chat turn from the settings map.
+///
+/// This is the one place the persisted settings become a routing decision, so
+/// both privacy guarantees are enforced together and are unit-testable:
+///
+///  * **Private mode always wins.** A per-message "cloud once" request cannot
+///    flip it, because nothing may leave the device while private mode is on.
+///  * **A per-message "cloud once" forces cloud for exactly this turn** by
+///    overriding the persisted [mode] locally — it never writes anything back,
+///    so the next turn reverts to the user's saved choice.
+///
+/// Forcing the mode to `cloud` does not, on its own, guarantee a cloud call:
+/// [RouterService.decide] still refuses when there is no configured provider,
+/// when the device is offline, or when private mode is on.
+RoutingConfig routeConfigForTurn({
+  required String mode,
+  required bool privateMode,
+  required bool preferLocalOnMetered,
+  bool sendToCloudOnce = false,
+}) {
+  return RoutingConfig(
+    mode: sendToCloudOnce && !privateMode ? 'cloud' : mode,
+    privateMode: privateMode,
+    preferLocalOnMetered: preferLocalOnMetered,
+  );
+}
+
+/// Seam for the connectivity probe: when non-null it replaces the real DNS
+/// lookup. Production leaves it null; a test sets it to count calls and prove
+/// that private mode performs *no* lookup, rather than relying on a negative
+/// that a live network could mask.
+typedef DnsLookup = Future<List<InternetAddress>> Function(String host);
+
+/// Test-only override for [RouterService.probeConnectivity]'s DNS lookup.
+DnsLookup? dnsLookupOverride;
+
 class RouterService {
   RouterService._();
 
@@ -86,6 +122,11 @@ class RouterService {
   bool isOnline = true;
   bool isMetered = false;
 
+  /// When true the router must not make *any* network call — not even the DNS
+  /// connectivity probe. Mirrors the persisted `private_mode` setting, and is
+  /// set at startup and whenever the user toggles it.
+  bool privateMode = false;
+
   /// Candidates in preference order: (provider, modelId).
   List<({CloudProvider provider, String modelId})> _candidates = const [];
 
@@ -94,8 +135,9 @@ class RouterService {
     Log.i('router: ${list.length} cloud candidate(s) configured');
   }
 
-  bool get hasCloud =>
-      !_candidates.isEmpty && !(_candidates.isEmpty);
+  /// True when at least one cloud provider is configured. On a fresh install
+  /// this is false, and [decide] then refuses cloud for every turn.
+  bool get hasCloud => _candidates.isNotEmpty;
 
   /// The best cloud option able to accept an image, if any.
   ({CloudProvider provider, String modelId})? get visionCandidate {
@@ -294,10 +336,23 @@ class RouterService {
   ///
   /// Uses a DNS lookup rather than an HTTP request so it costs no bandwidth
   /// and leaks no request metadata.
+  ///
+  /// **Private mode skips it entirely.** A DNS lookup is still a network call,
+  /// and private mode promises that nothing leaves the device — so when
+  /// [privateMode] is set the probe returns the last known state without
+  /// touching the network.
   Future<bool> probeConnectivity() async {
+    if (privateMode) {
+      Log.d('router: private mode — skipping the connectivity probe');
+      return isOnline;
+    }
     try {
-      final result = await InternetAddress.lookup('one.one.one.one')
-          .timeout(const Duration(seconds: 3));
+      const host = 'one.one.one.one';
+      final override = dnsLookupOverride;
+      final result = override != null
+          ? await override(host).timeout(const Duration(seconds: 3))
+          : await InternetAddress.lookup(host)
+              .timeout(const Duration(seconds: 3));
       isOnline = result.isNotEmpty &&
           result.first.rawAddress.isNotEmpty;
     } catch (_) {
