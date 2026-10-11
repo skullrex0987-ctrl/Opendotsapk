@@ -63,6 +63,8 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
           const SizedBox(height: 12),
           _backendCard(settings, llm),
           const SizedBox(height: 12),
+          _threadsCard(settings),
+          const SizedBox(height: 12),
           _benchmarkCard(llm),
           const SizedBox(height: 12),
           _npuCard(),
@@ -85,6 +87,12 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
     final ram = gpu.totalRamMb > 0
         ? '${(gpu.totalRamMb / 1024).toStringAsFixed(1)} GB'
         : 'unknown';
+    final backend = llm.activeBackend ?? 'none';
+    final backendLabel = switch (backend) {
+      'vulkan' => 'Vulkan (GPU)',
+      'cpu' => 'CPU only',
+      _ => 'Unknown',
+    };
 
     return Card(
       child: Padding(
@@ -99,7 +107,9 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
             _row('Hardware', gpu.hardware),
             _row('Memory', ram),
             _row('GPU', gpu.gpuLabel),
+            _row('Backend', backendLabel),
             _row('Layers offloaded', '${llm.gpuLayers}'),
+            _row('CPU threads', '${llm.threads}'),
             const SizedBox(height: 10),
             Text(
               gpu.summary,
@@ -162,9 +172,60 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
     }
   }
 
+  Widget _threadsCard(Map<String, dynamic> settings) {
+    final current = int.tryParse('${settings['cpu_threads']}') ?? 4;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('CPU Threads',
+                style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Text(
+              'Controls how many CPU cores are used for inference. More threads '
+              'can speed up prompt processing but may slow down token generation '
+              'on memory-bandwidth-bound workloads. $current is a good starting point.',
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Text('Threads:', style: TextStyle(fontSize: 13)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Slider(
+                    value: current.toDouble(),
+                    min: 1,
+                    max: 4,
+                    divisions: 3,
+                    label: '$current',
+                    onChanged: (v) {
+                      ref
+                          .read(settingsProvider.notifier)
+                          .updateSetting('cpu_threads', v.toInt());
+                      setState(() {});
+                    },
+                  ),
+                ),
+                Text('$current',
+                    style: const TextStyle(fontSize: 13, width: 24)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _setMode(String mode) async {
     await ref.read(settingsProvider.notifier).updateSetting('gpu_offload', mode);
     if (!mounted) return;
+
+    // Also save thread count when reloading
+    final currentThreads = int.tryParse('${settings['cpu_threads']}') ?? 4;
+    await ref.read(settingsProvider.notifier).updateSetting('cpu_threads', currentThreads);
 
     // The backend is fixed at model-load time, so the change only takes effect
     // after a reload. Offer it rather than silently doing nothing.

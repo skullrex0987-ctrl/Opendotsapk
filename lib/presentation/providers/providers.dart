@@ -367,6 +367,11 @@ class SettingsNotifier extends StateNotifier<Map<String, dynamic>> {
     // stays on the CPU for midrange Mali parts where the GPU usually loses.
     'gpu_offload': 'auto',
 
+    // Number of CPU threads for inference (1-4). The default of 4 is a safe
+    // starting point for most phones; reduce to 2 or 1 if you experience
+    // thermal throttling or OOM on low-end devices.
+    'cpu_threads': 4,
+
     // First-run
     'onboarding_done': false,
   };
@@ -413,6 +418,7 @@ class SettingsNotifier extends StateNotifier<Map<String, dynamic>> {
       'active_cloud_model',
       'model_path',
       'gpu_offload',
+      'cpu_threads',
       'cloud_consent_provider',
     ]) {
       final raw = await _db.getPreference(key);

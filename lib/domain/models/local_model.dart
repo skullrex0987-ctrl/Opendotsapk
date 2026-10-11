@@ -57,6 +57,12 @@ class LocalModel {
   /// Null for embedding models and models whose arch is unknown.
   final String? llmArch;
 
+  /// True for multimodal models (e.g. Qwen3.5) that carry both chat and
+  /// vision in a single GGUF. They appear in both the LLM and Vision lists
+  /// so the user can select them as either or both — selecting as both is
+  /// the correct pairing because the same file is the LLM and the projector.
+  final bool isMultimodal;
+
   const LocalModel({
     required this.id,
     required this.displayName,
@@ -73,9 +79,10 @@ class LocalModel {
     this.ramHint = '',
     this.unsupportedReason,
     this.llmArch,
+    this.isMultimodal = false,
   });
 
-  bool get isVision => kind == ModelKind.vision;
+  bool get isVision => kind == ModelKind.vision || isMultimodal;
   bool get isEmbedding => kind == ModelKind.embedding;
 
   String get sizeLabel {
@@ -150,9 +157,8 @@ class ModelCatalog {
   static const LocalModel qwen35_08b = LocalModel(
     id: 'qwen3.5-0.8b-q4_k_m',
     displayName: 'Qwen3.5 0.8B (vision)',
-    description: 'Sees images natively and chats. One download, no separate '
-        'projector pass.',
-    kind: ModelKind.vision,
+    description: 'Sees images natively and chats. One download, no separate ',
+    kind: ModelKind.llm, // multimodal — usable as both chat and vision
     fileName: 'Qwen3.5-0.8B-Q4_K_M.gguf',
     url: 'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf',
     // 532,517,120 B weights + 204,987,232 B mmproj = 737,504,352 B.
@@ -161,10 +167,8 @@ class ModelCatalog {
     projectorUrl: 'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/mmproj-F16.gguf',
     contextSize: 4096,
     ramHint: '~1.1 GB',
-    // Qwen3.5 is a multimodal model: the same GGUF serves as both chat model
-    // and vision-capable backbone. When this is selected as the vision model,
-    // the chat model must match (or be null, which falls back to default).
     llmArch: 'qwen35',
+    isMultimodal: true, // appears in both LLM and Vision lists
   );
 
   /// Documented-but-disabled. Kept in the catalogue so the limitation is

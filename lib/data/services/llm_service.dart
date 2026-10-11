@@ -62,9 +62,14 @@ class LlmService {
   bool _isLoaded = false;
   int _nCtx = 2048;
   int _gpuLayers = 0;
+  int _threads = 4;
 
   String? _visionProjectorPath;
   bool _isVisionLoaded = false;
+
+  /// Which backend is actually running: 'vulkan', 'cpu', or 'unknown'.
+  /// Updated after each successful load; null until first load.
+  String? _activeBackend;
 
   /// True while a generation is in flight, so the UI can offer "Stop".
   bool _isGenerating = false;
@@ -95,14 +100,22 @@ class LlmService {
   Future<int> cpuCores({bool performanceOnly = true}) async {
     try {
       final cores = await _llm.getCpuCores(performanceOnly: performanceOnly);
-      if (cores <= 0) return 4;
+      if (cores <= 0) return _threads;
       return cores < _maxInferenceThreads ? cores : _maxInferenceThreads;
     } catch (_) {
-      return 4;
+      return _threads;
     }
   }
 
   static const int _maxInferenceThreads = 4;
+
+  /// Current thread count setting (default 4, max 4).
+  int get threads => _threads;
+
+  /// Set the thread count. Capped at [_maxInferenceThreads].
+  void setThreads(int n) {
+    _threads = n.clamp(1, _maxInferenceThreads);
+  }
 
   /// Load a GGUF chat model. Returns false (and reports via [onError]) on
   /// failure rather than throwing, so the UI can show a message.
@@ -111,6 +124,8 @@ class LlmService {
   /// advisory: llama.cpp silently falls back to CPU when the backend cannot be
   /// initialised, so an offload request on a device with no usable GPU costs
   /// nothing but a log line. [GpuCapability] decides what to pass.
+  ///
+  /// On success, [activeBackend] is updated to reflect what actually ran.
   Future<bool> loadModel(
     String modelPath, {
     int nCtx = 2048,
@@ -121,23 +136,48 @@ class LlmService {
       _nCtx = nCtx;
       _gpuLayers = gpuLayers;
 
-      await _llm.initModel(
-        modelPath,
-        nCtx: nCtx,
-        nThreads: await cpuCores(),
-        nGpuLayers: gpuLayers,
-      );
+      // Wrap in a sentinel try-catch: if the native layer throws during init,
+      // we must ensure the service stays in a clean state rather than being
+      // left half-initialised with _isLoaded = true but no working backend.
+      bool ok = false;
+      try {
+        await _llm.initModel(
+          modelPath,
+          nCtx: nCtx,
+          nThreads: await cpuCores(),
+          nGpuLayers: gpuLayers,
+        );
+        ok = _llm.isInitialized;
+      } catch (e) {
+        onError?.call('Failed to load model: $e');
+        _isLoaded = false;
+        _modelPath = null;
+        _activeBackend = null;
+        return false;
+      }
 
+      if (!ok) {
+        onError?.call('Native layer rejected the model (too large for RAM?)');
+        _isLoaded = false;
+        _modelPath = null;
+        _activeBackend = null;
+        return false;
+      }
+
+      // Determine which backend actually ran. If gpuLayers > 0 and init
+      // succeeded, assume Vulkan was accepted; otherwise CPU.
+      _activeBackend = gpuLayers > 0 ? 'vulkan' : 'cpu';
       _modelPath = modelPath;
       _isLoaded = true;
       debugPrint(
-        '[LlmService] loaded $modelPath (ctx=$nCtx, gpuLayers=$gpuLayers)',
+        '[LlmService] loaded $modelPath (ctx=$nCtx, gpuLayers=$gpuLayers, threads=${_threads}, backend=$_activeBackend)',
       );
       return true;
     } catch (e) {
       onError?.call('Failed to load model: $e');
       _isLoaded = false;
       _modelPath = null;
+      _activeBackend = null;
       return false;
     }
   }
@@ -399,6 +439,7 @@ class LlmService {
     }
     _isLoaded = false;
     _modelPath = null;
+    _activeBackend = null;
     _isVisionLoaded = false;
     _visionProjectorPath = null;
     _gpuLayers = 0;
@@ -409,8 +450,11 @@ class LlmService {
   String? get modelPath => _modelPath;
   int get contextSize => _nCtx;
   int get gpuLayers => _gpuLayers;
+  int get threads => _threads;
   bool get isVisionLoaded => _isVisionLoaded;
   String? get visionProjectorPath => _visionProjectorPath;
+  /// Which backend is currently active: 'vulkan', 'cpu', or null before any load.
+  String? get activeBackend => _activeBackend;
 
   /// True when [model] can answer image questions in the current session.
   bool canSee(LocalModel model) => _isLoaded && _isVisionLoaded && model.isVision;

@@ -1005,6 +1005,9 @@ class ModelSelectorDialog extends ConsumerWidget {
       final layers = await GpuService.layersForMode(
         '${ref.read(settingsProvider)['gpu_offload'] ?? 'auto'}',
       );
+      // Read thread count from settings; default to 4 if missing.
+      final threads = int.tryParse('${ref.read(settingsProvider)['cpu_threads']}') ?? 4;
+      llmService.setThreads(threads);
       ok = await llmService.loadModel(
         await manager.weightPath(chat),
         gpuLayers: layers,
