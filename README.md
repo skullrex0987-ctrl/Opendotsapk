@@ -2,7 +2,7 @@
 
 A fully local, privacy-first AI agent for Android that runs entirely on-device.
 
-**Download the APK:** [Releases → v1.2.0](https://github.com/skullrex0987-ctrl/Opendotsapk/releases/tag/v1.2.0)
+**Download the APK:** [Releases → v1.3.0](https://github.com/skullrex0987-ctrl/Opendotsapk/releases/tag/v1.3.0)
 
 ## Status
 
@@ -23,7 +23,7 @@ A fully local, privacy-first AI agent for Android that runs entirely on-device.
 | Document ingestion | Working — PDF, DOCX, plain text |
 | At-rest encryption + biometric lock | Working — AES-GCM, key in the keystore |
 | NPU acceleration | **Not used, and not claimed** — no portable backend exists; the app names the NPU it detects |
-| Verified on a physical device | **Partially** — v1.1.0 ran on real hardware (which is how the hang was found); v1.2.0 has not yet |
+| Verified on a physical device | **Partially** — v1.1.0 ran on real hardware (which is how the hang was found); v1.2.0 and v1.3.0 have not |
 
 ## Performance and the GPU
 
