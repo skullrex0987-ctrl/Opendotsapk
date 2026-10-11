@@ -256,3 +256,12 @@ MIT License - See LICENSE file for details
 - [native_llama](https://pub.dev/packages/native_llama) for the Flutter FFI bindings
 - [Qwen](https://github.com/QwenLM/Qwen) and [SmolLM2](https://huggingface.co/HuggingFaceTB) for the base models
 - [MiniLM](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) for embeddings
+
+## v1.5.0 (GPU/NPU Acceleration)
+- C1: GPU backend tracking and visibility
+- C2: Crash-safe backend initialization
+- C3: Auto-optimize benchmark (CPU vs GPU)
+- C4: CPU thread control slider
+- C9: Performance screen shows real backend stats
+- Qwen3.5 dual-role (chat + vision in one model)
+- Architecture mismatch detection and warnings
