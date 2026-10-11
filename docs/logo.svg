@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="LocalMind logo">
+  <defs>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#6366F1"/>
+      <stop offset="55%" stop-color="#8B5CF6"/>
+      <stop offset="100%" stop-color="#22D3EE"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.22"/>
+      <stop offset="60%" stop-color="#ffffff" stop-opacity="0.04"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="14" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- rounded app tile -->
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="#0B0C11"/>
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#brand)" opacity="0.16"/>
+  <rect x="16.75" y="16.75" width="478.5" height="478.5" rx="111.25"
+        fill="none" stroke="url(#brand)" stroke-width="1.5" opacity="0.55"/>
+
+  <!-- neural core: a mind rendered as three orbiting nodes around a centre -->
+  <g filter="url(#glow)">
+    <circle cx="256" cy="256" r="74" fill="none" stroke="url(#brand)" stroke-width="9" opacity="0.95"/>
+    <circle cx="256" cy="256" r="26" fill="url(#brand)"/>
+
+    <!-- orbit ring -->
+    <ellipse cx="256" cy="256" rx="150" ry="58"
+             fill="none" stroke="url(#brand)" stroke-width="5"
+             opacity="0.42" transform="rotate(-24 256 256)"/>
+
+    <!-- synapse nodes -->
+    <circle cx="256" cy="106" r="21" fill="#22D3EE"/>
+    <circle cx="381" cy="316" r="21" fill="#8B5CF6"/>
+    <circle cx="131" cy="316" r="21" fill="#6366F1"/>
+
+    <!-- connective tissue -->
+    <g stroke="url(#brand)" stroke-width="6" stroke-linecap="round" opacity="0.7">
+      <line x1="256" y1="106" x2="256" y2="182"/>
+      <line x1="381" y1="316" x2="298" y2="278"/>
+      <line x1="131" y1="316" x2="214" y2="278"/>
+    </g>
+  </g>
+
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#sheen)"/>
+</svg>

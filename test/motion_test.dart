@@ -182,7 +182,9 @@ void main() {
 
     testWidgets('a stagger ends fully opaque for every row', (tester) async {
       // A staggered row that never reaches opacity 1 is a row the user
-      // believes is disabled.
+      // believes is disabled. Each row is keyed so its Opacity ancestor can be
+      // resolved unambiguously — `find.ancestor` over an unkeyed list matches
+      // every row's Opacity, not this row's.
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -190,8 +192,9 @@ void main() {
               children: [
                 for (var i = 0; i < 4; i++)
                   FadeSlideIn(
+                    key: ValueKey<int>(i),
                     delay: Duration(milliseconds: i * 60),
-                    child: const Text('settled'),
+                    child: Text('settled-$i'),
                   ),
               ],
             ),
@@ -202,14 +205,13 @@ void main() {
       await tester.pump(AppMotion.slow);
       await tester.pump(AppMotion.slow);
 
-      for (final element in find.text('settled').evaluate()) {
+      for (var i = 0; i < 4; i++) {
+        final row = find.byKey(ValueKey<int>(i));
+        expect(row, findsOneWidget);
         final opacity = tester.widget<Opacity>(
-          find.ancestor(
-            of: find.byWidget(element.widget),
-            matching: find.byType(Opacity),
-          ),
+          find.descendant(of: row, matching: find.byType(Opacity)).first,
         );
-        expect(opacity.opacity, 1.0);
+        expect(opacity.opacity, 1.0, reason: 'row $i must settle fully opaque');
       }
     });
 

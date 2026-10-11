@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/logo.svg" alt="LocalMind" width="128" height="128">
+
 # LocalMind
 
 **A fully local, privacy-first AI agent for Android.** The language model runs on
@@ -12,10 +14,18 @@ stays on the device unless you deliberately add a cloud key.
 [![platform](https://img.shields.io/badge/Android-9%2B-34D399)](https://developer.android.com/guide/topics/manifest/uses-sdk-element)
 [![runtime](https://img.shields.io/badge/llama.cpp-via%20native__llama-22D3EE)](https://github.com/ggerganov/llama.cpp)
 
-[**Download the latest APK**](https://github.com/skullrex0987-ctrl/Opendotsapk/releases/latest) &nbsp;·&nbsp;
+[**⬇ Download the latest APK**](https://github.com/skullrex0987-ctrl/Opendotsapk/releases/latest) &nbsp;·&nbsp;
 [Model support](docs/MODEL_SUPPORT.md) &nbsp;·&nbsp;
 [FAQ](docs/FAQ.md) &nbsp;·&nbsp;
 [Release notes](docs/RELEASE_v1.6.0.md)
+
+</div>
+
+<div align="center">
+
+| Offline-first | Your keys in the Keystore | Vulkan GPU offload | AES-GCM at rest |
+|:---:|:---:|:---:|:---:|
+| Inference, retrieval and documents never leave the device | Never in `shared_preferences`, never in a row | Auto / GPU / CPU with CPU fallback | Chats, memories, notes and chunks |
 
 </div>
 
@@ -26,6 +36,27 @@ v1.6.0 is the build in preparation. The newest published APK is
 the Download link above always resolves to whatever is actually released.
 
 </div>
+
+---
+
+## What's new in v1.6.0
+
+v1.6.0 is the **Qwen3.5 fix release plus a UI pass**. Four of the changes below
+are bugs a real phone found; the rest is the design work that turns eleven
+independently-styled screens into one app.
+
+| | Change | Why it matters |
+|---|---|---|
+| 🐛 | **Qwen3.5 0.8B can finally load as the chat model** | Selecting it was rejected because it is registered as `ModelKind.vision`, so the app silently fell back to a model you never downloaded. **Load** failed forever, however many times you tried. |
+| 🐛 | **The architecture warning named the wrong model** | It blamed Qwen2.5 0.5B while Qwen3.5 was selected on screen. The picker read its selection through the catalog's label, not the section you tapped. |
+| 🐛 | **Staggered list entrances no longer crash** | Every staggered list — Activity, Memory, Cloud — would have thrown a Flutter assertion on first paint. Caught by the test suite, not by a device. |
+| 🐛 | **Undownloaded models no longer look installed** | `FileStat.stat` returns `notFound` rather than throwing, so the size probe read `-1` bytes as a present file. |
+| ✨ | **One theme, one motion language** | `lib/core/theme` now owns every colour, radius, curve and duration. Eleven screens stop inventing their own. |
+| ✨ | **Designed empty and error states** | "Nothing here yet" is a built component with a glyph, one sentence and at most one action — instead of a bare string on four different screens. |
+| ⚡ | **Model list stops re-reading the disk** | One `stat` instead of two, memoised documents directory, and a TTL cache invalidated by the exact path each write touches. |
+| 🔇 | **Six silent `catch` blocks now log** | A failed download cleanup, an unreadable provider config, a tool permission that did not persist — all were invisible and all looked like the app ignoring you. |
+
+Full detail, including the evidence for each bug: [docs/RELEASE_v1.6.0.md](docs/RELEASE_v1.6.0.md).
 
 ---
 
