@@ -11,6 +11,7 @@ import '../../data/services/mcp_service.dart';
 import '../../data/services/router_service.dart';
 import '../../data/services/secure_store.dart';
 import '../../data/tools/tool_registry.dart';
+import '../../data/tools/tool_permission_store.dart';
 import '../../data/database/database_helper.dart';
 import '../../domain/agents/agent_orchestrator.dart';
 import '../../domain/models/models.dart';
@@ -186,31 +187,33 @@ final toolPermissionsProvider = StateNotifierProvider<PermissionsNotifier, Map<S
   return PermissionsNotifier();
 });
 
+/// Tool permissions, backed by the single [ToolPermissionStore].
+///
+/// This used to keep its own hardcoded map and a `_loadPermissions` that read
+/// nothing back, so every restart silently reset the user's choices — and the
+/// agent consulted a *different* map anyway. There is now one persisted store,
+/// and this notifier is only a view onto it.
 class PermissionsNotifier extends StateNotifier<Map<String, String>> {
-  final DatabaseHelper _db = DatabaseHelper.instance;
-  
+  final ToolPermissionStore _store = ToolPermissionStore();
+
   PermissionsNotifier() : super({}) {
     _loadPermissions();
   }
-  
+
   Future<void> _loadPermissions() async {
-    // Load from preferences or use defaults
+    // The registry has to be populated before we can enumerate tools.
+    // `registerTools` is idempotent, so calling it here as well as at startup
+    // is safe and makes this provider self-sufficient.
+    final registry = ToolRegistry()..registerTools();
+    await _store.load(registry.tools.keys);
     state = {
-      'send_sms': 'ask',
-      'create_calendar_event': 'ask',
-      'add_contact': 'ask',
-      'set_alarm': 'ask',
-      'open_app': 'ask',
-      'web_search': 'allow',
-      'get_location': 'ask',
-      'create_note': 'allow',
-      'read_notes': 'allow',
+      for (final entry in _store.all.entries) entry.key: entry.value.wire,
     };
   }
-  
-  void setPermission(String tool, String permission) {
+
+  Future<void> setPermission(String tool, String permission) async {
+    await _store.set(tool, ToolPermission.parse(permission));
     state = Map.from(state)..[tool] = permission;
-    _db.savePreference('permission_$tool', permission);
   }
 }
 
