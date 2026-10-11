@@ -52,6 +52,11 @@ class LocalModel {
   /// download gigabytes that are guaranteed never to load.
   final String? unsupportedReason;
 
+  /// The llama.cpp architecture name (e.g. `qwen2`, `phi2`, `qwen35`).
+  /// Used to validate LLM–vision projector pairing before load.
+  /// Null for embedding models and models whose arch is unknown.
+  final String? llmArch;
+
   const LocalModel({
     required this.id,
     required this.displayName,
@@ -67,6 +72,7 @@ class LocalModel {
     this.contextSize = 2048,
     this.ramHint = '',
     this.unsupportedReason,
+    this.llmArch,
   });
 
   bool get isVision => kind == ModelKind.vision;
@@ -102,6 +108,7 @@ class ModelCatalog {
     approxBytes: 397000000,
     contextSize: 4096,
     ramHint: '~600 MB',
+    llmArch: 'qwen2',
   );
 
   static const LocalModel smolLm2_360m = LocalModel(
@@ -114,6 +121,7 @@ class ModelCatalog {
     approxBytes: 386000000,
     contextSize: 2048,
     ramHint: '~550 MB',
+    llmArch: 'phi2',
   );
 
   static const LocalModel qwen15b = LocalModel(
@@ -126,6 +134,7 @@ class ModelCatalog {
     approxBytes: 1120000000,
     contextSize: 4096,
     ramHint: '~1.4 GB',
+    llmArch: 'qwen2',
   );
 
   // ---------------------------------------------------------- vision models
@@ -152,6 +161,10 @@ class ModelCatalog {
     projectorUrl: 'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/mmproj-F16.gguf',
     contextSize: 4096,
     ramHint: '~1.1 GB',
+    // Qwen3.5 is a multimodal model: the same GGUF serves as both chat model
+    // and vision-capable backbone. When this is selected as the vision model,
+    // the chat model must match (or be null, which falls back to default).
+    llmArch: 'qwen35',
   );
 
   /// Documented-but-disabled. Kept in the catalogue so the limitation is

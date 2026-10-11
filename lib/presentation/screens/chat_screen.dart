@@ -960,6 +960,47 @@ class ModelSelectorDialog extends ConsumerWidget {
     var ok = false;
     var message = 'Failed to load model';
 
+    // Architecture check: a vision projector must match the chat model's arch.
+    // Qwen3.5 carries vision in its own architecture (qwen35), so if the
+    // selected vision model has an llmArch, the chat model must share it — or
+    // we refuse to load and tell the user what to do instead of handing the
+    // projector to the wrong backbone.
+    final chat = await manager.activeLlm();
+    final vision = await manager.activeVision();
+    if (vision != null && chat.id != vision.id) {
+      final chatArch = chat.llmArch;
+      final visionArch = vision.llmArch;
+      if (chatArch != null && visionArch != null && chatArch != visionArch) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Architecture mismatch: ${chat.displayName} cannot use ',
+                '${vision.displayName}. Vision projectors only work with their ',
+                'matching LLM. Select ${vision.displayName} as the chat model ',
+                'instead, or pick a vision model for a compatible chat model.',
+              ),
+            ),
+          );
+        }
+        return;
+      }
+    }
+
+    if (!await manager.isInstalled(chat)) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'No chat model downloaded yet. '
+              'Open Settings -> Models and pick one.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
     try {
       final layers = await GpuService.layersForMode(
         '${ref.read(settingsProvider)['gpu_offload'] ?? 'auto'}',
@@ -970,7 +1011,6 @@ class ModelSelectorDialog extends ConsumerWidget {
       );
 
       // Vision is optional — a missing projector must not fail the chat model.
-      final vision = await manager.activeVision();
       if (ok && vision != null) {
         final projector = await manager.projectorPath(vision);
         if (projector != null) {
@@ -1054,6 +1094,13 @@ class ModelSelectorDialog extends ConsumerWidget {
           ),
         ),
       );
+      // Clear model_path so the chip does not keep showing the external path
+      // after a storage load. The picker will read "Nothing loaded" until the
+      // user taps Load again with a catalog model selected.
+      if (context.mounted) {
+        await ref.read(settingsProvider.notifier).updateSetting('model_path', null);
+        await ref.read(settingsProvider.notifier).updateSetting('active_llm_id', null);
+      }
     } catch (e) {
       Log.w('load from storage failed: $e');
       if (!context.mounted) return;
@@ -1226,6 +1273,21 @@ class _ModelPickerBodyState extends ConsumerState<_ModelPickerBody> {
                       ),
                 ),
               ),
+            // Architecture mismatch warning: Qwen3.5 vision requires its
+            // matching LLM. SmolLM2 (phi2) + Qwen3.5 projector always fails
+            // at the native layer because the projector expects qwen35 context.
+            if (_isVisionArchIncompatible(vision: vision, chat: chat))
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text(
+                  '${chat.displayName} cannot use ${vision.displayName}. '
+                  'Vision projectors only work with their matching LLM. '
+                  'Select ${vision.displayName} as the chat model instead.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                ),
+              ),
             const Divider(),
             ..._section(context, 'Chat model', ModelKind.llm),
             const Divider(),
@@ -1246,6 +1308,23 @@ class _ModelPickerBodyState extends ConsumerState<_ModelPickerBody> {
       ),
       ..._catalog(kind).map(_row),
     ];
+  }
+
+  /// True when the selected chat model and vision model have incompatible
+  /// architectures. Qwen3.5 carries its own vision encoder (qwen35 arch), so
+  /// pairing it with a phi2 LLM like SmolLM2 is guaranteed to fail at the
+  /// native layer — the projector expects qwen35 context and the LLM speaks
+  /// phi2. The UI warns the user before they tap Load rather than letting the
+  /// load fail with a confusing "vision failed to attach" message.
+  bool _isVisionArchIncompatible({
+    required LocalModel? vision,
+    required LocalModel chat,
+  }) {
+    if (vision == null || vision.llmArch == null) return false;
+    if (chat.id == vision.id) return false; // same model, compatible by definition
+    final chatArch = chat.llmArch;
+    if (chatArch == null) return false; // unknown arch — be permissive
+    return chatArch != vision.llmArch;
   }
 }
 
