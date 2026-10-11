@@ -4,6 +4,11 @@
 /// Block, and "Ask" means a confirmation sheet on every call. Blocking a tool
 /// is enforced in the agent loop, not just in this UI, so the model cannot
 /// route around it.
+///
+/// The tools are laid out as a grid because they are scanned, not read: nine
+/// rows of equal content is a column of "more", and the grid lets the status
+/// of all nine be seen at once. Below the two-column breakpoint it collapses
+/// to a single column so nothing is truncated on a narrow phone.
 library;
 
 import 'package:flutter/material.dart';
@@ -11,10 +16,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/constants/app_constants.dart';
+import '../../core/theme/app_theme.dart';
 import '../../core/utils/log.dart';
 import '../../data/services/mcp_service.dart';
 import '../../data/services/secure_store.dart';
 import '../providers/providers.dart';
+import '../widgets/screen_empty_state.dart';
+import '../widgets/screen_section_card.dart';
 
 class ToolsScreen extends ConsumerStatefulWidget {
   const ToolsScreen({super.key});
@@ -26,68 +34,213 @@ class ToolsScreen extends ConsumerStatefulWidget {
 class _ToolsScreenState extends ConsumerState<ToolsScreen> {
   @override
   Widget build(BuildContext context) {
-    final permissions = ref.watch(toolPermissionsProvider);
+    // The permission state is read inside _PermissionGrid, which rebuilds on
+    // its own; watching it here as well would rebuild the MCP panel on every
+    // permission change for no visible difference.
+    final tools = AppConstants.defaultPermissions.keys.toList();
 
     return Scaffold(
       appBar: AppBar(title: const Text('Tools')),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
-          const _SectionHeader(
+          ScreenSection(
             title: 'Built-in tools',
-            subtitle: 'Runs on this device. Nothing is sent anywhere.',
+            subtitle:
+                'Runs on this device. Nothing is sent anywhere unless you '
+                'switch a tool to Ask or Allow.',
+            padding: EdgeInsets.zero,
+            child: _PermissionGrid(tools: tools),
           ),
-          for (final entry in AppConstants.defaultPermissions.keys)
-            _permissionTile(entry, permissions[entry] ?? 'ask'),
-
-          const SizedBox(height: 24),
-
-          const _SectionHeader(
+          const SizedBox(height: 20),
+          const ScreenSection(
             title: 'MCP servers',
             subtitle:
                 'Connect external tools over the Model Context Protocol. '
                 'Anything a server exposes becomes available to the agent.',
+            padding: EdgeInsets.zero,
+            child: McpServersPanel(),
           ),
-          const McpServersPanel(),
         ],
       ),
     );
   }
+}
 
-  Widget _permissionTile(String toolName, String level) {
+/// The two-column tool grid.
+///
+/// Wrapped rather than a [GridView]: this lives inside the parent [ListView],
+/// and nesting a scrollable grid in a scrollable produces an unbounded-height
+/// error unless the grid opts out of scrolling entirely. A [Wrap] gives the
+/// same column behaviour with no scroll semantics of its own.
+class _PermissionGrid extends ConsumerWidget {
+  const _PermissionGrid({required this.tools});
+
+  final List<String> tools;
+
+  /// Below this width a two-column grid would truncate the tool names and the
+  /// permission dropdown, so it collapses to one column.
+  static const double _twoColumnBreakpoint = 420;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final permissions = ref.watch(toolPermissionsProvider);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final twoColumns = constraints.maxWidth >= _twoColumnBreakpoint;
+        final gap = 10.0;
+        final width = twoColumns
+            ? (constraints.maxWidth - gap) / 2
+            : constraints.maxWidth;
+
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: [
+            for (final tool in tools)
+              SizedBox(
+                width: width,
+                child: _ToolCard(
+                  tool: tool,
+                  level: permissions[tool] ?? AppConstants.permissionAsk,
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// One tool: name, what it does, and its permission state.
+class _ToolCard extends ConsumerWidget {
+  const _ToolCard({required this.tool, required this.level});
+
+  final String tool;
+  final String level;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+
+    // The permission word is the point of this screen, so it owns the colour:
+    // green runs freely, amber asks first, red is refused outright.
+    final tint = switch (level) {
+      AppConstants.permissionAllow => AppColors.success,
+      AppConstants.permissionBlock => AppColors.danger,
+      _ => AppColors.warning,
+    };
+    final statusText = switch (level) {
+      AppConstants.permissionAllow => 'Runs freely',
+      AppConstants.permissionBlock => 'Blocked',
+      _ => 'Asks first',
+    };
+
     return Card(
-      child: ListTile(
-        title: Text(_prettyName(toolName)),
-        subtitle: Text(
-          _describe(toolName),
-          style: const TextStyle(fontSize: 11),
-        ),
-        trailing: DropdownButton<String>(
-          value: level,
-          underline: const SizedBox.shrink(),
-          items: const [
-            DropdownMenuItem(
-              value: AppConstants.permissionAllow,
-              child: Text('Allow', style: TextStyle(color: Colors.green)),
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ScreenRowIcon(icon: _iconFor(tool), color: tint, size: 34),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    _prettyName(tool),
+                    style: theme.textTheme.titleMedium,
+                  ),
+                ),
+              ],
             ),
-            DropdownMenuItem(
-              value: AppConstants.permissionAsk,
-              child: Text('Ask', style: TextStyle(color: Colors.orange)),
-            ),
-            DropdownMenuItem(
-              value: AppConstants.permissionBlock,
-              child: Text('Block', style: TextStyle(color: Colors.red)),
+            const SizedBox(height: 10),
+            Text(_describe(tool), style: theme.textTheme.bodySmall),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                // Dot + word rather than colour alone: three of the three
+                // states are distinguished by hue and nothing else, which is
+                // not enough to read at a glance.
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: tint,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 7),
+                Expanded(
+                  child: Text(
+                    statusText,
+                    style: theme.textTheme.labelMedium?.copyWith(color: tint),
+                  ),
+                ),
+                Flexible(
+                  flex: 2,
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: level,
+                      isDense: true,
+                      isExpanded: true,
+                      items: const [
+                        DropdownMenuItem(
+                          value: AppConstants.permissionAllow,
+                          child: Text('Allow'),
+                        ),
+                        DropdownMenuItem(
+                          value: AppConstants.permissionAsk,
+                          child: Text('Ask'),
+                        ),
+                        DropdownMenuItem(
+                          value: AppConstants.permissionBlock,
+                          child: Text('Block'),
+                        ),
+                      ],
+                      onChanged: (v) {
+                        if (v == null) return;
+                        ref
+                            .read(toolPermissionsProvider.notifier)
+                            .setPermission(tool, v);
+                      },
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
-          onChanged: (v) {
-            if (v == null) return;
-            ref
-                .read(toolPermissionsProvider.notifier)
-                .setPermission(toolName, v);
-          },
         ),
       ),
     );
+  }
+
+  static IconData _iconFor(String tool) {
+    switch (tool) {
+      case AppConstants.toolSendSms:
+        return Icons.sms_outlined;
+      case AppConstants.toolCalendarEvent:
+        return Icons.event_outlined;
+      case AppConstants.toolAddContact:
+        return Icons.person_add_alt_1_outlined;
+      case AppConstants.toolSetAlarm:
+        return Icons.alarm_outlined;
+      case AppConstants.toolOpenApp:
+        return Icons.apps_outlined;
+      case AppConstants.toolWebSearch:
+        return Icons.search;
+      case AppConstants.toolGetLocation:
+        return Icons.location_on_outlined;
+      case AppConstants.toolCreateNote:
+        return Icons.note_add_outlined;
+      case AppConstants.toolReadNotes:
+        return Icons.library_books_outlined;
+      default:
+        return Icons.handyman_outlined;
+    }
   }
 
   static String _prettyName(String tool) => tool
@@ -121,35 +274,6 @@ class _ToolsScreenState extends ConsumerState<ToolsScreen> {
   }
 }
 
-class _SectionHeader extends StatelessWidget {
-  final String title;
-  final String subtitle;
-
-  const _SectionHeader({required this.title, required this.subtitle});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            subtitle,
-            style: TextStyle(fontSize: 12, color: Colors.grey[400]),
-          ),
-          const SizedBox(height: 8),
-        ],
-      ),
-    );
-  }
-}
-
 /// Add, remove and connect MCP servers, and list the tools they expose.
 class McpServersPanel extends ConsumerStatefulWidget {
   const McpServersPanel({super.key});
@@ -180,83 +304,85 @@ class _McpServersPanelState extends ConsumerState<McpServersPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    if (_servers.isEmpty) {
+      return ScreenEmptyState(
+        icon: Icons.hub_outlined,
+        title: 'No MCP servers connected',
+        message:
+            'Add one to extend the agent beyond the built-in tools — for '
+            'example a filesystem, GitHub or database server.',
+        actionLabel: 'Add server',
+        actionIcon: Icons.add,
+        onAction: _addServer,
+        compact: true,
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (_servers.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Text(
-              'No servers configured. Add one to extend the agent beyond the '
-              'built-in tools — for example a filesystem, GitHub or database '
-              'server.',
-              style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-            ),
+        for (final s in _servers) ...[
+          _ServerCard(
+            server: s,
+            toolCount: _tools.where((t) => t.serverId == s.id).length,
+            onDelete: () {
+              ref.read(mcpServiceProvider).removeServer(s.id);
+              _refresh();
+            },
           ),
-        for (final s in _servers)
-          Card(
-            child: ListTile(
-              leading: Icon(
-                s.enabled ? Icons.hub : Icons.hub_outlined,
-                color: s.enabled ? Colors.green : Colors.grey,
-              ),
-              title: Text(s.name),
-              subtitle: Text(
-                '${s.url}\n'
-                '${_tools.where((t) => t.serverId == s.id).length} tool(s)',
-                style: const TextStyle(fontSize: 11),
-              ),
-              isThreeLine: true,
-              trailing: IconButton(
-                icon: const Icon(Icons.delete_outline),
-                onPressed: () {
-                  ref.read(mcpServiceProvider).removeServer(s.id);
-                  _refresh();
-                },
-              ),
-            ),
-          ),
-        const SizedBox(height: 8),
+          const SizedBox(height: 10),
+        ],
         Row(
           children: [
-            FilledButton.icon(
-              onPressed: _busy ? null : _addServer,
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text('Add server'),
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: _busy ? null : _addServer,
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Add server'),
+              ),
             ),
             const SizedBox(width: 8),
-            OutlinedButton.icon(
-              onPressed: _busy || _servers.isEmpty ? null : _connectAll,
-              icon: const Icon(Icons.refresh, size: 18),
-              label: const Text('Connect'),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _busy ? null : _connectAll,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Connect'),
+              ),
             ),
           ],
         ),
         if (_status != null) ...[
-          const SizedBox(height: 10),
-          Text(
-            _status!,
-            style: TextStyle(fontSize: 12, color: Colors.grey[400]),
-          ),
+          const SizedBox(height: 12),
+          _StatusLine(text: _status!),
         ],
         if (_tools.isNotEmpty) ...[
           const SizedBox(height: 16),
-          Text(
-            'Available tools (${_tools.length})',
-            style: const TextStyle(fontWeight: FontWeight.bold),
+          const ScreenRowDivider(),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Text(
+              'Available tools (${_tools.length})',
+              style: theme.textTheme.labelLarge,
+            ),
           ),
-          const SizedBox(height: 6),
           for (final t in _tools)
             ListTile(
               dense: true,
-              leading: const Icon(Icons.build_outlined, size: 18),
+              contentPadding: EdgeInsets.zero,
+              leading: ScreenRowIcon(
+                icon: Icons.build_outlined,
+                color: AppColors.accent,
+                size: 30,
+              ),
               title: Text(
                 t.qualifiedName,
-                style: const TextStyle(fontSize: 13),
+                style: theme.textTheme.bodyMedium,
               ),
               subtitle: Text(
                 t.description.isEmpty ? '(no description)' : t.description,
-                style: const TextStyle(fontSize: 11),
+                style: theme.textTheme.bodySmall,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -310,7 +436,7 @@ class _McpServersPanelState extends ConsumerState<McpServersPanel> {
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Cancel'),
           ),
-          TextButton(
+          FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Add'),
           ),
@@ -318,19 +444,25 @@ class _McpServersPanelState extends ConsumerState<McpServersPanel> {
       ),
     );
 
-    if (ok != true) return;
-
+    // Read the fields before disposing the controllers: the dialog is gone but
+    // the text has to survive long enough to be validated and stored.
     final url = urlCtl.text.trim();
-    if (url.isEmpty) return;
+    final name = nameCtl.text.trim();
+    final token = tokenCtl.text.trim();
+
+    nameCtl.dispose();
+    urlCtl.dispose();
+    tokenCtl.dispose();
+
+    if (ok != true || url.isEmpty) return;
 
     final id = const Uuid().v4().substring(0, 8);
-    final token = tokenCtl.text.trim();
 
     final mcp = ref.read(mcpServiceProvider);
     mcp.addServer(
       McpServerConfig(
         id: id,
-        name: nameCtl.text.trim().isEmpty ? 'Server $id' : nameCtl.text.trim(),
+        name: name.isEmpty ? 'Server $id' : name,
         url: url,
         requiresAuth: token.isNotEmpty,
       ),
@@ -404,5 +536,88 @@ class _McpServersPanelState extends ConsumerState<McpServersPanel> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+}
+
+/// One configured MCP server.
+class _ServerCard extends StatelessWidget {
+  const _ServerCard({
+    required this.server,
+    required this.toolCount,
+    required this.onDelete,
+  });
+
+  final McpServerConfig server;
+  final int toolCount;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tint = server.enabled ? AppColors.success : theme.colorScheme.onSurfaceVariant;
+
+    return Card(
+      margin: EdgeInsets.zero,
+      child: ListTile(
+        leading: ScreenRowIcon(
+          icon: server.enabled ? Icons.hub : Icons.hub_outlined,
+          color: tint,
+        ),
+        title: Text(server.name),
+        subtitle: Text(
+          '${server.url}\n$toolCount tool(s)',
+          style: theme.textTheme.bodySmall,
+        ),
+        isThreeLine: true,
+        trailing: IconButton(
+          icon: const Icon(Icons.delete_outline),
+          tooltip: 'Remove server',
+          onPressed: onDelete,
+        ),
+      ),
+    );
+  }
+}
+
+/// The connection result line, coloured by how it went.
+class _StatusLine extends StatelessWidget {
+  const _StatusLine({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final ok = text.startsWith('OK');
+    final tint = ok
+        ? AppColors.success
+        : text.startsWith('Connecting')
+        ? AppColors.accent
+        : AppColors.danger;
+
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: tint.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            ok ? Icons.check_circle_outline : Icons.info_outline,
+            size: 15,
+            color: tint,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: theme.textTheme.bodySmall?.copyWith(color: tint),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

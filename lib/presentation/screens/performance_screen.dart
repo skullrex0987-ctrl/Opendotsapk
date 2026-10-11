@@ -10,14 +10,21 @@
 /// So the screen does three things: it reports what the device actually is, it
 /// lets the backend be chosen, and it measures both so the choice can be based
 /// on the user's own hardware instead of on a guess made at build time.
+///
+/// Every control is explained in one line. A thread count is not
+/// self-explanatory, and "I moved this slider and now generation is slower" is
+/// a support question the explanation prevents.
 library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/theme/app_theme.dart';
+import '../../core/theme/motion.dart';
 import '../../data/services/gpu_service.dart';
 import '../../data/services/llm_service.dart';
 import '../providers/providers.dart';
+import '../widgets/screen_empty_state.dart';
 
 class PerformanceScreen extends ConsumerStatefulWidget {
   const PerformanceScreen({super.key});
@@ -33,6 +40,13 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
   bool _benchmarking = false;
   String? _benchmarkResult;
   double _lastTokensPerSecond = 0.0;
+
+  /// Throughput from the last CPU run of the auto-benchmark, kept separately so
+  /// the comparison bars have both halves. Null until a comparison has run.
+  double? _cpuTokensPerSecond;
+
+  /// Throughput from the last GPU run of the auto-benchmark.
+  double? _gpuTokensPerSecond;
 
   @override
   void initState() {
@@ -60,13 +74,13 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           _deviceCard(llm),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           _backendCard(settings, llm),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           _threadsCard(settings),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           _benchmarkCard(llm),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           _npuCard(),
         ],
       ),
@@ -75,12 +89,7 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
 
   Widget _deviceCard(LlmService llm) {
     if (_loadingDevice) {
-      return const Card(
-        child: Padding(
-          padding: EdgeInsets.all(16),
-          child: Center(child: CircularProgressIndicator()),
-        ),
-      );
+      return const ScreenLoadingState(label: 'Reading device information…');
     }
 
     final gpu = _gpu ?? GpuCapability.unknown;
@@ -94,31 +103,25 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
       _ => 'Unknown',
     };
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'This device',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 10),
-            _row('System on chip', gpu.socModel),
-            _row('Hardware', gpu.hardware),
-            _row('Memory', ram),
-            _row('GPU', gpu.gpuLabel),
-            _row('Backend', backendLabel),
-            _row('Layers offloaded', '${llm.gpuLayers}'),
-            _row('CPU threads', '${llm.threads}'),
-            const SizedBox(height: 10),
-            Text(
-              gpu.summary,
-              style: TextStyle(fontSize: 12, color: Colors.grey[400]),
-            ),
-          ],
-        ),
+    return _Card(
+      title: 'This device',
+      subtitle: gpu.summary,
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        children: [
+          _Stat(label: 'System on chip', value: gpu.socModel),
+          _Stat(label: 'Hardware', value: gpu.hardware),
+          _Stat(label: 'Memory', value: ram, numeric: true),
+          _Stat(label: 'GPU', value: gpu.gpuLabel),
+          _Stat(
+            label: 'Backend',
+            value: backendLabel,
+            numeric: backend != 'none',
+          ),
+          _Stat(label: 'Layers offloaded', value: '${llm.gpuLayers}', numeric: true),
+          _Stat(label: 'CPU threads', value: '${llm.threads}', numeric: true),
+        ],
       ),
     );
   }
@@ -126,38 +129,39 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
   Widget _backendCard(Map<String, dynamic> settings, LlmService llm) {
     final mode = '${settings['gpu_offload'] ?? 'auto'}';
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Compute backend',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 10),
-            SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(value: 'auto', label: Text('Auto')),
-                ButtonSegment(value: 'gpu', label: Text('GPU')),
-                ButtonSegment(value: 'cpu', label: Text('CPU')),
-              ],
-              selected: {mode},
-              onSelectionChanged: (s) => _setMode(s.first),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              _modeExplanation(mode),
-              style: TextStyle(fontSize: 12, color: Colors.grey[400]),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Changing this reloads the model — takes a few seconds.',
-              style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-            ),
-          ],
-        ),
+    return _Card(
+      title: 'Compute backend',
+      subtitle: _modeExplanation(mode),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SegmentedButton<String>(
+            segments: const [
+              ButtonSegment(value: 'auto', label: Text('Auto')),
+              ButtonSegment(value: 'gpu', label: Text('GPU')),
+              ButtonSegment(value: 'cpu', label: Text('CPU')),
+            ],
+            selected: {mode},
+            onSelectionChanged: (s) => _setMode(s.first),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Icon(
+                Icons.info_outline,
+                size: 14,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Changing this reloads the model — takes a few seconds.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -178,48 +182,52 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
 
   Widget _threadsCard(Map<String, dynamic> settings) {
     final current = int.tryParse('${settings['cpu_threads']}') ?? 4;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'CPU Threads',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Controls how many CPU cores are used for inference. More threads '
-              'can speed up prompt processing but may slow down token generation '
-              'on memory-bandwidth-bound workloads. $current is a good starting point.',
-              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                const Text('Threads:', style: TextStyle(fontSize: 13)),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Slider(
-                    value: current.toDouble(),
-                    min: 1,
-                    max: 4,
-                    divisions: 3,
-                    label: '$current',
-                    onChanged: (v) {
-                      ref
-                          .read(settingsProvider.notifier)
-                          .updateSetting('cpu_threads', v.toInt());
-                      setState(() {});
-                    },
+    final theme = Theme.of(context);
+
+    return _Card(
+      title: 'CPU threads',
+      subtitle:
+          'How many cores are used for inference. More threads speed up '
+          'prompt processing but can slow down token generation, which is '
+          'memory-bandwidth-bound. $current is a safe starting point.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text('Threads', style: theme.textTheme.labelMedium),
+              const Spacer(),
+              // The number is the setting; it is the thing being changed, so it
+              // gets the accent rather than a grey label.
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.accent.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+                ),
+                child: Text(
+                  '$current',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: AppColors.accent,
                   ),
                 ),
-                Text('$current', style: const TextStyle(fontSize: 13)),
-              ],
-            ),
-          ],
-        ),
+              ),
+            ],
+          ),
+          Slider(
+            value: current.toDouble(),
+            min: 1,
+            max: 4,
+            divisions: 3,
+            label: '$current',
+            onChanged: (v) {
+              ref
+                  .read(settingsProvider.notifier)
+                  .updateSetting('cpu_threads', v.toInt());
+              setState(() {});
+            },
+          ),
+        ],
       ),
     );
   }
@@ -294,65 +302,82 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
   }
 
   Widget _benchmarkCard(LlmService llm) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Benchmark',
-              style: TextStyle(fontWeight: FontWeight.bold),
+    final cpu = _cpuTokensPerSecond;
+    final gpu = _gpuTokensPerSecond;
+
+    return _Card(
+      title: 'Benchmark',
+      subtitle:
+          'Generates a short reply and measures throughput. Run it on the '
+          'CPU and on the GPU to see which is genuinely faster on your phone.',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          FilledButton.icon(
+            onPressed: (_benchmarking || !llm.isLoaded) ? null : _benchmark,
+            icon: _benchmarking
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.speed, size: 18),
+            label: Text(_benchmarking ? 'Measuring…' : 'Run benchmark'),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: (_benchmarking || !llm.isLoaded) ? null : _autoBenchmark,
+            icon: _benchmarking
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.auto_awesome, size: 18),
+            label: const Text('Auto-optimize (test CPU + GPU)'),
+          ),
+          if (!llm.isLoaded) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  size: 14,
+                  color: AppColors.warning,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Load a model first.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 8),
-            const Text(
-              'Generates a short reply and measures throughput. Run it on the '
-              'CPU and on the GPU to see which is genuinely faster on your '
-              'phone.',
-              style: TextStyle(fontSize: 12),
-            ),
-            const SizedBox(height: 12),
-            FilledButton.icon(
-              onPressed: (_benchmarking || !llm.isLoaded) ? null : _benchmark,
-              icon: _benchmarking
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.speed, size: 18),
-              label: Text(_benchmarking ? 'Measuring…' : 'Run benchmark'),
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: (_benchmarking || !llm.isLoaded)
-                  ? null
-                  : _autoBenchmark,
-              icon: _benchmarking
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.auto_awesome, size: 18),
-              label: const Text('Auto-optimize (test CPU + GPU)'),
-            ),
-            if (!llm.isLoaded) ...[
-              const SizedBox(height: 8),
-              Text(
-                'Load a model first.',
-                style: TextStyle(fontSize: 11, color: Colors.grey[500]),
-              ),
-            ],
-            if (_benchmarkResult != null) ...[
-              const SizedBox(height: 12),
-              Text(
-                _benchmarkResult!,
-                style: const TextStyle(fontSize: 13, height: 1.4),
-              ),
-            ],
           ],
-        ),
+          if (_benchmarkResult != null) ...[
+            const SizedBox(height: 16),
+            // The comparison is the point of this card, so it gets the
+            // animation: two bars growing to the same scale is the fastest way
+            // to communicate "these are close" or "this one wins".
+            if (cpu != null && gpu != null)
+              _ComparisonBars(cpu: cpu, gpu: gpu),
+            if (cpu == null && gpu == null && _lastTokensPerSecond > 0)
+              _SingleBar(
+                label: 'Last measurement',
+                value: _lastTokensPerSecond,
+              ),
+            if (cpu != null || gpu != null) ...[
+              const SizedBox(height: 10),
+              _Verdict(cpu: cpu, gpu: gpu),
+            ],
+            const SizedBox(height: 12),
+            Text(
+              _benchmarkResult!,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -434,6 +459,8 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
 
     setState(() {
       _benchmarking = false;
+      _cpuTokensPerSecond = cpuTps;
+      _gpuTokensPerSecond = gpuTps;
       _benchmarkResult =
           'CPU: ${cpuTps.toStringAsFixed(1)} tok/s\n'
           'GPU: ${gpuTps.toStringAsFixed(1)} tok/s\n'
@@ -476,69 +503,330 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
   Widget _npuCard() {
     final gpu = _gpu ?? GpuCapability.unknown;
 
+    return _Card(
+      title: 'Neural accelerator',
+      subtitle: gpu.npuLabel,
+      trailing: const _Tag(
+        label: 'not used',
+        color: AppColors.warning,
+        icon: Icons.block,
+      ),
+      child: Text(
+        'Every phone NPU needs its own vendor runtime — Qualcomm QNN, '
+        'MediaTek NeuroPilot, Samsung ENN, Google Edge TPU — with '
+        'different SDKs and licences and no common build target. There is '
+        'no portable NPU backend for llama.cpp, so claiming NPU '
+        'acceleration here would be a lie. This app uses the GPU '
+        '(Vulkan) or the CPU.',
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
+    );
+  }
+}
+
+/// Titled card used for every block on this screen.
+///
+/// The screen was five unlabelled [Card]s stacked with a bold word as a title;
+/// giving each one a real header, an explanation line and consistent padding
+/// is what makes it read as one settings page rather than a debug dump.
+class _Card extends StatelessWidget {
+  const _Card({
+    required this.title,
+    required this.child,
+    this.subtitle,
+    this.trailing,
+  });
+
+  final String title;
+  final String? subtitle;
+  final Widget? trailing;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                const Text(
-                  'Neural accelerator',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+                Expanded(
+                  child: Text(title, style: theme.textTheme.titleMedium),
                 ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Text('not used', style: TextStyle(fontSize: 10)),
-                ),
+                if (trailing != null) trailing!,
               ],
             ),
-            const SizedBox(height: 8),
-            Text(gpu.npuLabel, style: const TextStyle(fontSize: 12)),
-            const SizedBox(height: 8),
-            Text(
-              'Every phone NPU needs its own vendor runtime — Qualcomm QNN, '
-              'MediaTek NeuroPilot, Samsung ENN, Google Edge TPU — with '
-              'different SDKs and licences and no common build target. There is '
-              'no portable NPU backend for llama.cpp, so claiming NPU '
-              'acceleration here would be a lie. This app uses the GPU '
-              '(Vulkan) or the CPU.',
-              style: TextStyle(
-                fontSize: 11,
-                height: 1.4,
-                color: Colors.grey[500],
-              ),
-            ),
+            if (subtitle != null) ...[
+              const SizedBox(height: 4),
+              Text(subtitle!, style: theme.textTheme.bodySmall),
+            ],
+            const SizedBox(height: 14),
+            child,
           ],
         ),
       ),
     );
   }
+}
 
-  Widget _row(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
+/// One value from the device probe.
+///
+/// Numbers get the accent colour on purpose: "4.8 GB" and "Snapdragon 8 Gen 1"
+/// are different kinds of fact, and colour is the cheapest way to say which is
+/// the measurement.
+class _Stat extends StatelessWidget {
+  const _Stat({
+    required this.label,
+    required this.value,
+    this.numeric = false,
+  });
+
+  final String label;
+  final String value;
+  final bool numeric;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      width: 148,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label, style: theme.textTheme.labelSmall),
+          const SizedBox(height: 3),
+          Text(
+            value,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: numeric ? AppColors.accent : null,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A small pill for a state that needs words ("not used", "active").
+class _Tag extends StatelessWidget {
+  const _Tag({
+    required this.label,
+    required this.color,
+    this.icon,
+  });
+
+  final String label;
+  final Color color;
+  final IconData? icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 12, color: color),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            label,
+            style: Theme.of(
+              context,
+            ).textTheme.labelSmall?.copyWith(color: color),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// CPU vs GPU as two bars on a shared scale.
+///
+/// Both bars are drawn against the same maximum, because two independently
+/// scaled bars would make a 6 vs 7 tok/s result look like a landslide. The
+/// animation runs once when the numbers arrive and then holds — animating on
+/// every rebuild would make the bars twitch through the rest of the run.
+class _ComparisonBars extends StatelessWidget {
+  const _ComparisonBars({required this.cpu, required this.gpu});
+
+  final double cpu;
+  final double gpu;
+
+  @override
+  Widget build(BuildContext context) {
+    final max = (cpu > gpu ? cpu : gpu);
+    // A zero maximum (both runs failed) would divide by zero below; guard it
+    // rather than letting the layout throw.
+    final scale = max <= 0 ? 1.0 : max;
+
+    return Column(
+      children: [
+        _Bar(
+          label: 'CPU',
+          value: cpu,
+          fraction: (cpu / scale).clamp(0.0, 1.0),
+          color: AppColors.accent,
+        ),
+        const SizedBox(height: 10),
+        _Bar(
+          label: 'GPU',
+          value: gpu,
+          fraction: (gpu / scale).clamp(0.0, 1.0),
+          color: AppColors.brand,
+        ),
+      ],
+    );
+  }
+}
+
+/// One labelled throughput bar.
+class _Bar extends StatelessWidget {
+  const _Bar({
+    required this.label,
+    required this.value,
+    required this.fraction,
+    required this.color,
+  });
+
+  final String label;
+  final double value;
+  final double fraction;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: fraction),
+      duration: AppMotion.slow,
+      curve: AppMotion.emphasized,
+      builder: (context, t, _) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(label, style: theme.textTheme.labelMedium),
+                const Spacer(),
+                Text(
+                  '${value.toStringAsFixed(1)} tok/s',
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: color,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 5),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: LinearProgressIndicator(
+                value: t,
+                minHeight: 6,
+                backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                valueColor: AlwaysStoppedAnimation<Color>(color),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// The single-result bar, for a plain "Run benchmark".
+class _SingleBar extends StatelessWidget {
+  const _SingleBar({required this.label, required this.value});
+
+  final String label;
+  final double value;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Bar(
+      label: label,
+      value: value,
+      fraction: 1.0,
+      color: AppColors.accent,
+    );
+  }
+}
+
+/// Plain-language reading of the two numbers.
+///
+/// "GPU won by 12%" is the raw result; "about the same, so the CPU is fine"
+/// is the decision. A user who offloads to a GPU for a 4% gain and then sees
+/// their phone run hot has been told the wrong thing.
+class _Verdict extends StatelessWidget {
+  const _Verdict({required this.cpu, required this.gpu});
+
+  final double? cpu;
+  final double? gpu;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = cpu;
+    final g = gpu;
+    if (c == null || g == null) return const SizedBox.shrink();
+
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    final bool gpuWins = g > c;
+    final double ratio = gpuWins ? (c <= 0 ? 0 : g / c) : (g <= 0 ? 0 : c / g);
+    final double pct = (ratio - 1) * 100;
+    final String verdict;
+    final Color tint;
+
+    if (ratio < 1.15) {
+      verdict = 'Both backends perform about the same on this phone, so the '
+          'CPU is the safer choice — it runs cooler.';
+      tint = scheme.onSurfaceVariant;
+    } else if (gpuWins) {
+      verdict = 'The GPU is ${pct.toStringAsFixed(0)}% faster here, so it '
+          'has been selected.';
+      tint = AppColors.brand;
+    } else {
+      verdict = 'The CPU is ${pct.toStringAsFixed(0)}% faster on this phone, '
+          'which is common on midrange GPUs. It has been selected.';
+      tint = AppColors.accent;
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: tint.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: 130,
-            child: Text(
-              label,
-              style: TextStyle(fontSize: 12, color: Colors.grey[500]),
-            ),
-          ),
+          Icon(Icons.insights_outlined, size: 16, color: tint),
+          const SizedBox(width: 8),
           Expanded(
-            child: SelectableText(value, style: const TextStyle(fontSize: 12)),
+            child: Text(
+              verdict,
+              style: theme.textTheme.bodySmall?.copyWith(color: tint),
+            ),
           ),
         ],
       ),

@@ -7,17 +7,24 @@
 ///  * "Test" makes one minimal request so the user finds out now rather than
 ///    mid-conversation.
 ///  * The routing mode is explained in plain words, not jargon.
+///
+/// The screen opens by putting the product's central claim on screen before
+/// any provider list: on-device is free and private, cloud needs your key and
+/// is opt-in. Every screen below that is a detail of one of those two halves.
 library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/theme/app_theme.dart';
+import '../../core/theme/motion.dart';
 import '../../core/utils/log.dart';
 import '../../data/services/cloud_service.dart';
 import '../../data/services/router_service.dart';
 import '../../data/services/secure_store.dart';
 import '../../domain/models/cloud_provider.dart';
 import '../providers/providers.dart';
+import '../widgets/screen_section_card.dart';
 
 /// True when [host] names this device or the local network, so that a
 /// plaintext `http://` request to it cannot be read off the public internet.
@@ -89,8 +96,8 @@ String? baseUrlValidationError(String url) {
       'https:// — an API key sent over http could be read on the network.';
 }
 
-/// Splits a dotted-decimal IPv4 string into four octets, or null if it is not
-/// a well-formed IPv4 literal. Kept private; only [isLocalHost] uses it.
+/// Splits a dotted-decimal IPv4 string into four octets, or null if it is not a
+/// well-formed IPv4 literal. Kept private; only [isLocalHost] uses it.
 List<int>? _parseIpv4(String host) {
   final parts = host.split('.');
   if (parts.length != 4) return null;
@@ -120,20 +127,32 @@ class _CloudModelsScreenState extends ConsumerState<CloudModelsScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Cloud Models')),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
-          _privacyCard(),
-          const SizedBox(height: 16),
+          const _PrivacyCard(),
+          const SizedBox(height: 20),
           _routingCard(settings),
-          const SizedBox(height: 16),
-          const Text(
-            'Providers',
-            style: TextStyle(fontWeight: FontWeight.bold),
+          const SizedBox(height: 20),
+          ScreenSection(
+            title: 'Providers',
+            subtitle:
+                'Each one needs its own key, stored in this device\'s '
+                'keystore. Nothing is sent until you add one.',
+            padding: EdgeInsets.zero,
+            child: Column(
+              children: [
+                for (var i = 0; i < CloudCatalog.providers.length; i++) ...[
+                  _providerTile(
+                    CloudCatalog.providers[i],
+                    activeProvider == CloudCatalog.providers[i].id,
+                  ),
+                  if (i != CloudCatalog.providers.length - 1)
+                    const ScreenRowDivider(),
+                ],
+              ],
+            ),
           ),
-          const SizedBox(height: 8),
-          for (final p in CloudCatalog.providers)
-            _providerTile(p, activeProvider == p.id),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
           _usageCard(),
         ],
       ),
@@ -142,30 +161,52 @@ class _CloudModelsScreenState extends ConsumerState<CloudModelsScreen> {
 
   Widget _privacyCard() {
     return Card(
-      color: Colors.green.withOpacity(0.08),
       child: Padding(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Icon(Icons.lock_outline, size: 18, color: Colors.green[400]),
-                const SizedBox(width: 8),
-                const Text(
-                  'How this works',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+                ScreenRowIcon(
+                  icon: Icons.lock_outline,
+                  color: AppColors.success,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Where your data goes',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            const Text(
+            const SizedBox(height: 14),
+            // The two halves of the product, side by side. This is the one
+            // place on the screen where the comparison has to be explicit:
+            // everything below it is configuration for the right-hand column.
+            // IntrinsicHeight is what makes the two cards equal height. A Row
+            // with CrossAxisAlignment.stretch inside a Column has an unbounded
+            // height constraint and would throw; IntrinsicHeight supplies a
+            // finite one derived from the taller child.
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Expanded(child: _ModeCard(local: true)),
+                  const SizedBox(width: 10),
+                  const Expanded(child: _ModeCard(local: false)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
               'You supply your own API key. It is stored in this device\'s '
               'hardware keystore and sent only to the provider you chose.\n\n'
               'There is no LocalMind server. Your key is never uploaded, and '
               'the on-device model stays the default — cloud is used only when '
               'you ask for it or when the router decides a turn needs it.',
-              style: TextStyle(fontSize: 12, height: 1.4),
+              style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
         ),
@@ -177,48 +218,37 @@ class _CloudModelsScreenState extends ConsumerState<CloudModelsScreen> {
     final mode = '${settings['cloud_mode'] ?? 'auto'}';
     final private = settings['private_mode'] as bool? ?? false;
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Routing',
-              style: TextStyle(fontWeight: FontWeight.bold),
+    return ScreenSection(
+      title: 'Routing',
+      subtitle: _modeExplanation(mode),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SegmentedButton<String>(
+            segments: const [
+              ButtonSegment(value: 'local', label: Text('On-device')),
+              ButtonSegment(value: 'auto', label: Text('Auto')),
+              ButtonSegment(value: 'cloud', label: Text('Cloud')),
+            ],
+            selected: {mode},
+            onSelectionChanged: (s) => ref
+                .read(settingsProvider.notifier)
+                .updateSetting('cloud_mode', s.first),
+          ),
+          const SizedBox(height: 8),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: private,
+            onChanged: (v) => ref
+                .read(settingsProvider.notifier)
+                .updateSetting('private_mode', v),
+            title: const Text('Private mode'),
+            subtitle: const Text(
+              'Forbid all network use. Nothing leaves this device, ever.',
             ),
-            const SizedBox(height: 10),
-            SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(value: 'local', label: Text('On-device')),
-                ButtonSegment(value: 'auto', label: Text('Auto')),
-                ButtonSegment(value: 'cloud', label: Text('Cloud')),
-              ],
-              selected: {mode},
-              onSelectionChanged: (s) => ref
-                  .read(settingsProvider.notifier)
-                  .updateSetting('cloud_mode', s.first),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              _modeExplanation(mode),
-              style: TextStyle(fontSize: 12, color: Colors.grey[400]),
-            ),
-            const Divider(height: 24),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              value: private,
-              onChanged: (v) => ref
-                  .read(settingsProvider.notifier)
-                  .updateSetting('private_mode', v),
-              title: const Text('Private mode'),
-              subtitle: const Text(
-                'Forbid all network use. Nothing leaves this device, ever.',
-                style: TextStyle(fontSize: 11),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -244,83 +274,192 @@ class _CloudModelsScreenState extends ConsumerState<CloudModelsScreen> {
       builder: (context, snap) {
         final hasKey = snap.data ?? false;
         final keyOptional = CloudCatalog.keyOptional.contains(provider.id);
+        final ready = hasKey || keyOptional;
 
-        return Card(
-          child: ListTile(
-            leading: Icon(
-              hasKey || keyOptional ? Icons.check_circle : Icons.key_off,
-              color: hasKey || keyOptional ? Colors.green : Colors.grey,
-            ),
-            title: Row(
-              children: [
-                Expanded(child: Text(provider.displayName)),
-                if (isActive)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.green.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Text('active', style: TextStyle(fontSize: 10)),
-                  ),
-              ],
-            ),
-            subtitle: Text(
-              hasKey
-                  ? 'Key saved · ${provider.models.length} model(s)'
-                  : keyOptional
-                  ? 'No key needed · ${provider.models.length} model(s)'
-                  : 'No key yet',
-              style: const TextStyle(fontSize: 11),
-            ),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => CloudProviderScreen(provider: provider),
-              ),
-            ),
+        return ListTile(
+          leading: ScreenRowIcon(
+            icon: _providerIcon(provider.id),
+            color: ready ? AppColors.success : null,
+          ),
+          title: Row(
+            children: [
+              Expanded(child: Text(provider.displayName)),
+              if (isActive) const _ActiveChip(),
+            ],
+          ),
+          subtitle: Text(
+            hasKey
+                ? 'Key saved · ${provider.models.length} model(s)'
+                : keyOptional
+                ? 'No key needed · ${provider.models.length} model(s)'
+                : 'No key yet',
+          ),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).push(
+            AppPageRoute(builder: (_) => CloudProviderScreen(provider: provider)),
           ),
         );
       },
     );
   }
 
+  /// A Material glyph standing in for a provider's logo.
+  ///
+  /// No network images: an icon is available offline, never shifts layout, and
+  /// cannot fail to load on a screen whose whole point is working without a
+  /// connection.
+  static IconData _providerIcon(String id) {
+    switch (id) {
+      case 'openai':
+        return Icons.blur_on;
+      case 'anthropic':
+        return Icons.auto_awesome;
+      case 'gemini':
+        return Icons.diamond_outlined;
+      case 'groq':
+        return Icons.bolt;
+      case 'deepseek':
+        return Icons.waves;
+      case 'openrouter':
+        return Icons.hub_outlined;
+      case 'ollama':
+        return Icons.dns_outlined;
+      default:
+        return Icons.settings_ethernet;
+    }
+  }
+
   Widget _usageCard() {
     final cloud = ref.read(cloudServiceProvider);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'This session',
-              style: TextStyle(fontWeight: FontWeight.bold),
+
+    return ScreenSection(
+      title: 'This session',
+      subtitle: 'Estimated from published list prices.',
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          _UsageRow(
+            label: 'Prompt tokens',
+            value: '${cloud.sessionPromptTokens}',
+          ),
+          _UsageRow(
+            label: 'Completion tokens',
+            value: '${cloud.sessionCompletionTokens}',
+          ),
+          _UsageRow(
+            label: 'Estimated cost',
+            value: '\$${cloud.sessionCostUsd.toStringAsFixed(4)}',
+            highlight: true,
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () => setState(cloud.resetSessionUsage),
+              icon: const Icon(Icons.restart_alt, size: 18),
+              label: const Text('Reset'),
             ),
-            const SizedBox(height: 8),
-            Text('Prompt tokens: ${cloud.sessionPromptTokens}'),
-            Text('Completion tokens: ${cloud.sessionCompletionTokens}'),
-            Text(
-              'Estimated cost: \$${cloud.sessionCostUsd.toStringAsFixed(4)}',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The on-device / cloud contrast at the top of the screen.
+class _ModeCard extends StatelessWidget {
+  const _ModeCard({required this.local});
+
+  final bool local;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tint = local ? AppColors.success : AppColors.accent;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: tint.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+        border: Border.all(color: tint.withValues(alpha: 0.24)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            local ? Icons.phone_android : Icons.cloud_outlined,
+            size: 20,
+            color: tint,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            local ? 'On-device' : 'Cloud',
+            style: theme.textTheme.titleMedium?.copyWith(color: tint),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            local ? 'Free and private. Works offline.' : 'Needs your API key. '
+                'You are billed.',
+            style: theme.textTheme.bodySmall,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "active" pill on the selected provider.
+class _ActiveChip extends StatelessWidget {
+  const _ActiveChip();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppColors.success.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+      ),
+      child: Text(
+        'active',
+        style: Theme.of(
+          context,
+        ).textTheme.labelSmall?.copyWith(color: AppColors.success),
+      ),
+    );
+  }
+}
+
+/// One line of session usage.
+class _UsageRow extends StatelessWidget {
+  const _UsageRow({
+    required this.label,
+    required this.value,
+    this.highlight = false,
+  });
+
+  final String label;
+  final String value;
+  final bool highlight;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(child: Text(label, style: theme.textTheme.bodyMedium)),
+          Text(
+            value,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: highlight ? AppColors.accent : null,
+              fontWeight: highlight ? FontWeight.w600 : null,
             ),
-            const SizedBox(height: 6),
-            Text(
-              'Cost is computed from published list prices and is an estimate '
-              'only. Your provider bills you directly.',
-              style: TextStyle(fontSize: 11, color: Colors.grey[500]),
-            ),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: () => setState(cloud.resetSessionUsage),
-                child: const Text('Reset'),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -387,162 +526,181 @@ class _CloudProviderScreenState extends ConsumerState<CloudProviderScreen> {
     return Scaffold(
       appBar: AppBar(title: Text(widget.provider.displayName)),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _hasKey ? 'API key saved' : 'API key',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  if (_hasKey)
-                    const Text(
-                      'A key is stored in the keystore. It is never displayed. '
-                      'Paste a new one below to replace it, or remove it.',
-                      style: TextStyle(fontSize: 12),
-                    )
-                  else
-                    TextField(
-                      controller: _keyController,
-                      obscureText: true,
-                      autocorrect: false,
-                      enableSuggestions: false,
-                      decoration: InputDecoration(
-                        hintText: widget.provider.keyHint.isNotEmpty
-                            ? 'Starts with ${widget.provider.keyHint}'
-                            : 'Paste your API key',
-                        border: const OutlineInputBorder(),
-                      ),
-                    ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      if (!_hasKey)
-                        FilledButton(
-                          onPressed: _busy ? null : _saveKey,
-                          child: const Text('Save key'),
-                        )
-                      else ...[
-                        OutlinedButton(
-                          onPressed: _busy ? null : _test,
-                          child: const Text('Test connection'),
-                        ),
-                        const SizedBox(width: 8),
-                        TextButton(
-                          onPressed: _busy ? null : _removeKey,
-                          child: const Text('Remove'),
-                        ),
-                      ],
-                    ],
-                  ),
-                  if (_status != null) ...[
-                    const SizedBox(height: 10),
-                    Text(
-                      _status!,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: _status!.startsWith('OK')
-                            ? Colors.green[300]
-                            : Colors.orange[300],
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
+          _keyCard(),
           if (widget.provider.id == 'custom' ||
               widget.provider.id == 'ollama') ...[
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Base URL',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _baseUrlController,
-                      onChanged: (_) => setState(() {}),
-                      keyboardType: TextInputType.url,
-                      decoration: InputDecoration(
-                        border: const OutlineInputBorder(),
-                        hintText: 'https://host/v1',
-                        errorText: baseUrlError,
-                        errorMaxLines: 3,
-                      ),
-                    ),
-                    if (showsLocalHttpWarning) ...[
-                      const SizedBox(height: 8),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(
-                            Icons.warning_amber_rounded,
-                            size: 16,
-                            color: Colors.amber[400],
-                          ),
-                          const SizedBox(width: 6),
-                          const Expanded(
-                            child: Text(
-                              'Local http:// endpoint. Traffic to this host is '
-                              'not encrypted, but it stays on your network. '
-                              'Anything off this network must use https://.',
-                              style: TextStyle(fontSize: 11),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                    const SizedBox(height: 8),
-                    const Text(
-                      'For a LAN server this must be reachable from the phone.',
-                      style: TextStyle(fontSize: 11),
-                    ),
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(
-                        onPressed: baseUrlError == null ? _saveBaseUrl : null,
-                        child: const Text('Save URL'),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+            const SizedBox(height: 20),
+            _baseUrlCard(
+              baseUrlText: baseUrlText,
+              baseUrlError: baseUrlError,
+              showsLocalHttpWarning: showsLocalHttpWarning,
             ),
-            const SizedBox(height: 12),
           ],
+          const SizedBox(height: 20),
+          ScreenSection(
+            title: 'Model',
+            subtitle: 'Which of this provider\'s models answers cloud turns.',
+            padding: EdgeInsets.zero,
+            child: Column(
+              children: [
+                for (var i = 0; i < widget.provider.models.length; i++) ...[
+                  _modelTile(widget.provider.models[i], activeModel),
+                  if (i != widget.provider.models.length - 1)
+                    const ScreenRowDivider(),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-          const Text('Model', style: TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          for (final m in widget.provider.models)
-            Card(
-              child: RadioListTile<String>(
-                value: m.id,
-                groupValue: activeModel,
-                onChanged: (v) => _selectModel(m),
-                title: Text(m.displayName),
-                subtitle: Text(
-                  '${m.contextTokens ~/ 1000}k context'
-                  '${m.supportsVision ? ' · vision' : ''}'
-                  '${m.inputPricePerM > 0 ? ' · ~\$${m.inputPricePerM}/M in' : ''}',
-                  style: const TextStyle(fontSize: 11),
-                ),
+  Widget _keyCard() {
+    final theme = Theme.of(context);
+
+    return ScreenSection(
+      title: _hasKey ? 'API key saved' : 'API key',
+      subtitle: _hasKey
+          ? 'A key is stored in the keystore. It is never displayed. Paste a '
+                'new one below to replace it, or remove it.'
+          : 'Stored in this device\'s hardware keystore and sent only to '
+                '${widget.provider.displayName}.',
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (!_hasKey)
+            TextField(
+              controller: _keyController,
+              obscureText: true,
+              autocorrect: false,
+              enableSuggestions: false,
+              decoration: InputDecoration(
+                hintText: widget.provider.keyHint.isNotEmpty
+                    ? 'Starts with ${widget.provider.keyHint}'
+                    : 'Paste your API key',
               ),
             ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (!_hasKey)
+                FilledButton.icon(
+                  onPressed: _busy ? null : _saveKey,
+                  icon: _busy
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.save_outlined, size: 18),
+                  label: const Text('Save key'),
+                )
+              else ...[
+                OutlinedButton.icon(
+                  onPressed: _busy ? null : _test,
+                  icon: const Icon(Icons.wifi_tethering, size: 18),
+                  label: const Text('Test connection'),
+                ),
+                TextButton.icon(
+                  onPressed: _busy ? null : _removeKey,
+                  icon: const Icon(Icons.delete_outline, size: 18),
+                  label: const Text('Remove'),
+                ),
+              ],
+            ],
+          ),
+          if (_status != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              _status!,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: _status!.startsWith('OK')
+                    ? AppColors.success
+                    : AppColors.warning,
+              ),
+            ),
+          ],
         ],
+      ),
+    );
+  }
+
+  Widget _baseUrlCard({
+    required String baseUrlText,
+    required String? baseUrlError,
+    required bool showsLocalHttpWarning,
+  }) {
+    return ScreenSection(
+      title: 'Base URL',
+      subtitle: 'For a LAN server this must be reachable from the phone.',
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: _baseUrlController,
+            onChanged: (_) => setState(() {}),
+            keyboardType: TextInputType.url,
+            decoration: InputDecoration(
+              hintText: 'https://host/v1',
+              errorText: baseUrlError,
+              errorMaxLines: 3,
+            ),
+          ),
+          if (showsLocalHttpWarning) ...[
+            const SizedBox(height: 10),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(
+                  Icons.warning_amber_rounded,
+                  size: 16,
+                  color: AppColors.warning,
+                ),
+                const SizedBox(width: 6),
+                const Expanded(
+                  child: Text(
+                    'Local http:// endpoint. Traffic to this host is '
+                    'not encrypted, but it stays on your network. '
+                    'Anything off this network must use https://.',
+                    style: TextStyle(fontSize: 11),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: baseUrlError == null ? _saveBaseUrl : null,
+              child: const Text('Save URL'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _modelTile(CloudModel model, String? activeModel) {
+    final theme = Theme.of(context);
+
+    return RadioListTile<String>(
+      value: model.id,
+      groupValue: activeModel,
+      onChanged: (v) => _selectModel(model),
+      title: Text(model.displayName),
+      subtitle: Text(
+        '${model.contextTokens ~/ 1000}k context'
+        '${model.supportsVision ? ' · vision' : ''}'
+        '${model.inputPricePerM > 0 ? ' · ~\$${model.inputPricePerM}/M in' : ''}',
+        style: theme.textTheme.bodySmall,
       ),
     );
   }
@@ -578,7 +736,7 @@ class _CloudProviderScreenState extends ConsumerState<CloudProviderScreen> {
               onPressed: () => Navigator.pop(ctx, false),
               child: const Text('Cancel'),
             ),
-            TextButton(
+            FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
               child: const Text('Save anyway'),
             ),
@@ -625,8 +783,9 @@ class _CloudProviderScreenState extends ConsumerState<CloudProviderScreen> {
     // invalid, but never persist a URL that failed validation.
     final error = baseUrlValidationError(url);
     if (error != null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(error)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error)));
       return;
     }
     final cfg = Map<String, String>.from(
@@ -635,8 +794,9 @@ class _CloudProviderScreenState extends ConsumerState<CloudProviderScreen> {
     cfg['baseUrl'] = url;
     await SecureStore.instance.setProviderConfig(widget.provider.id, cfg);
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('Base URL saved.')));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Base URL saved.')));
     _refreshRouter();
   }
 
