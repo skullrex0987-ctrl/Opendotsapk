@@ -128,7 +128,8 @@ Be concise.''';
 
   // -------------------------------------------------------------- personalities
   static const Map<String, String> personalities = {
-    'professional': 'You are a professional AI assistant. Be concise and accurate.',
+    'professional':
+        'You are a professional AI assistant. Be concise and accurate.',
     'friendly': 'You are a friendly AI assistant. Be warm and conversational.',
     'concise': 'You are a concise AI assistant. Be brief and to the point.',
   };

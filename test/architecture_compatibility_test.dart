@@ -12,28 +12,30 @@ void main() {
   group('Architecture compatibility', () {
     test('Qwen3.5 vision is compatible with itself', () {
       expect(
-          _isArchCompatible(ModelCatalog.qwen35_08b, ModelCatalog.qwen35_08b),
-          isTrue);
+        _isArchCompatible(ModelCatalog.qwen35_08b, ModelCatalog.qwen35_08b),
+        isTrue,
+      );
     });
 
     test('Qwen3.5 vision is incompatible with SmolLM2', () {
       expect(
-          _isArchCompatible(
-              ModelCatalog.smolLm2_360m, ModelCatalog.qwen35_08b),
-          isFalse);
+        _isArchCompatible(ModelCatalog.smolLm2_360m, ModelCatalog.qwen35_08b),
+        isFalse,
+      );
     });
 
     test('Qwen3.5 vision is incompatible with Qwen2.5', () {
       expect(
-          _isArchCompatible(
-              ModelCatalog.qwen05b, ModelCatalog.qwen35_08b),
-          isFalse);
+        _isArchCompatible(ModelCatalog.qwen05b, ModelCatalog.qwen35_08b),
+        isFalse,
+      );
     });
 
     test('Same-arch models are compatible', () {
       expect(
-          _isArchCompatible(ModelCatalog.qwen05b, ModelCatalog.qwen15b),
-          isTrue);
+        _isArchCompatible(ModelCatalog.qwen05b, ModelCatalog.qwen15b),
+        isTrue,
+      );
     });
 
     test('Models without arch are permissive', () {
@@ -48,8 +50,7 @@ void main() {
         url: 'https://example.com/unknown.gguf',
         approxBytes: 1000000,
       );
-      expect(
-          _isArchCompatible(unknown, ModelCatalog.qwen35_08b), isTrue);
+      expect(_isArchCompatible(unknown, ModelCatalog.qwen35_08b), isTrue);
     });
   });
 }
@@ -62,4 +63,3 @@ bool _isArchCompatible(LocalModel chat, LocalModel vision) {
   if (chatArch == null) return true;
   return chatArch == vision.llmArch;
 }
-

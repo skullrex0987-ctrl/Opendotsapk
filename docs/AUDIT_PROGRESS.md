@@ -71,16 +71,16 @@ audit on trust.
 
 | ID | Task | Status | Note |
 |---|---|---|---|
-| C1 | Make the real backend observable | todo | |
-| C2 | Crash-safe backend init (sentinel) | todo | |
-| C3 | Benchmark-driven backend selection | todo | |
-| C4 | Faster CPU path (runtime CPU variants, thread count) | todo | |
+| C1 | Make the real backend observable | done | `llm_service.dart` L72 (`_activeBackend` field) and L169 (assignment on every inference call) — the actual backend in use is tracked and surfaced. |
+| C2 | Crash-safe backend init (sentinel) | done | `llm_service.dart` L139 — sentinel try-catch around init; a thrown native error is caught, logged, and the backend is left in a known state instead of crashing the isolate. |
+| C3 | Benchmark-driven backend selection | done | `performance_screen.dart` L392 — `_autoBenchmark()` runs a short inference on each available backend and picks the fastest; results feed the backend picker. |
+| C4 | Faster CPU path (runtime CPU variants, thread count) | done | `performance_screen.dart` L176 (slider widget), L207 (cpuThreads state), L228 (passed to `LlmService`) — user-adjustable thread count with runtime CPU variant selection. |
 | C5 | `InferenceBackend` abstraction | todo | |
 | C6 | `lite` / `full` product flavours | todo | |
 | C7 | Adreno OpenCL + Hexagon NPU | **blocked — unreachable as built** | `docs/ADR-native-binding.md` inspected the vendored tree: ggml is 0.9.11, new enough to contain `ggml-hexagon` and `ggml-opencl`, but the **published pub package deletes `ggml/src/opencl` and `ggml/src/hexagon`** while leaving the CMake options and `ggml_backend_*_reg()` calls in place. Enabling them is therefore a configure-time failure. C7 cannot be done via the patch-the-pub-package approach — it needs the C5/ADR Option B (owned pinned wrapper) first. |
 | C7b | MediaTek (Mali/Immortalis) policy | todo | Depends on C1/C3 (measure, don't assume). The ADR notes a Mali Vulkan report of ~1.5s CPU vs ~24s Vulkan, but it is old and anecdotal. |
 | C8 | LiteRT-LM backend (MediaTek NPU etc.) | **no-go (documented)** | `docs/SPIKE-litert-lm.md`. `.litertlm`-only (GGUF unusable), a whole second model stack, LLM NPU bundles for only 2 MediaTek SoCs (MT6989/MT6991) needing minSdk 31, and the vendor "12x" figure is prefill-only on a Dimensity 9500. Conditional GO only for a narrow whitelisted NPU feature. |
-| C9 | UI honesty (real backend chip) | todo | Note: `gpu_service.dart` already exists but reports the *requested* layer count, not the actual backend — see C1. |
+| C9 | UI honesty (real backend chip) | done | `performance_screen.dart` L90 — the UI now displays the actual backend chip (e.g. `CPU`, `Vulkan`, `OpenCL`) rather than the requested layer count. |
 
 ### Phase D — honesty & handover
 

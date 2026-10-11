@@ -226,8 +226,10 @@ class PdfTextExtractor {
 /// seen even with other entries in between.
 String _dictWindow(Uint8List bytes, int streamStart) {
   final from = math.max(0, streamStart - 2048);
-  final window =
-      latin1.decode(bytes.sublist(from, streamStart), allowInvalid: true);
+  final window = latin1.decode(
+    bytes.sublist(from, streamStart),
+    allowInvalid: true,
+  );
   final openIdx = window.lastIndexOf('<<');
   return openIdx >= 0 ? window.substring(openIdx) : window;
 }

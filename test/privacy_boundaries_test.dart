@@ -38,8 +38,7 @@ void main() {
   // 1. Local-only default: a brand-new install with no key never goes to cloud.
   // --------------------------------------------------------------------------
   group('local-only default (fresh install, no cloud key)', () {
-    test('never constructs a cloud request for any mode, prompt or input',
-        () {
+    test('never constructs a cloud request for any mode, prompt or input', () {
       // No candidates == no provider configured == a fresh install.
       router.setCandidates(const []);
 
@@ -68,7 +67,8 @@ void main() {
               expect(
                 d.isCloud,
                 isFalse,
-                reason: 'mode=$mode promptLen=${prompt.length} '
+                reason:
+                    'mode=$mode promptLen=${prompt.length} '
                     'images=$hasImages modelReady=$localModelReady',
               );
               // The privacy promise is "nothing leaves the device", and a
@@ -84,12 +84,14 @@ void main() {
               expect(
                 d.isRefused,
                 expectsRefusal,
-                reason: 'mode=$mode images=$hasImages modelReady=$localModelReady',
+                reason:
+                    'mode=$mode images=$hasImages modelReady=$localModelReady',
               );
               expect(
                 d.target,
                 expectsRefusal ? RouteTarget.refused : RouteTarget.local,
-                reason: 'mode=$mode images=$hasImages modelReady=$localModelReady',
+                reason:
+                    'mode=$mode images=$hasImages modelReady=$localModelReady',
               );
             }
           }
@@ -245,8 +247,7 @@ void main() {
       }
     });
 
-    test('the stated payload covers prompt, history, documents and images',
-        () {
+    test('the stated payload covers prompt, history, documents and images', () {
       final joined = CloudPrivacy.leavesDevice.join(' ').toLowerCase();
       expect(joined, contains('prompt'));
       expect(joined, contains('conversation history'));

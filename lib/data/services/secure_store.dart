@@ -168,8 +168,10 @@ class SecureStore {
     }
 
     _status = SecureStoreStatus.readError;
-    Log.w('SecureStore.read($key) failed after $_readAttempts attempts: '
-        '$lastError');
+    Log.w(
+      'SecureStore.read($key) failed after $_readAttempts attempts: '
+      '$lastError',
+    );
     return SecureReadError(lastError!, lastStack);
   }
 
@@ -267,8 +269,10 @@ class SecureStore {
     final result = await _readTyped(_dbKeyName);
 
     if (result is SecureReadError) {
-      Log.e('database key read failed; refusing to regenerate — a new key '
-          'would orphan every previously encrypted row');
+      Log.e(
+        'database key read failed; refusing to regenerate — a new key '
+        'would orphan every previously encrypted row',
+      );
       throw SecureStoreReadException(_dbKeyName, result.error);
     }
 
@@ -300,8 +304,10 @@ class SecureStore {
   Future<void> resetDatabaseKey() async {
     await _delete(_dbKeyName);
     _status = SecureStoreStatus.ok;
-    Log.w('Database key reset at the user\'s request — previously encrypted '
-        'rows are now unreadable');
+    Log.w(
+      'Database key reset at the user\'s request — previously encrypted '
+      'rows are now unreadable',
+    );
   }
 
   /// Wipe every secret. Used by "Erase all data".

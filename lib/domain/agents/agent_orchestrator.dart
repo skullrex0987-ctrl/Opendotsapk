@@ -65,9 +65,10 @@ class AgentOrchestrator {
     List<MemoryEntry>? relevantMemories,
     ToolConfirmer? confirm,
   }) async {
-    final memoryContext = (relevantMemories != null && relevantMemories.isNotEmpty)
+    final memoryContext =
+        (relevantMemories != null && relevantMemories.isNotEmpty)
         ? '\n\nRelevant past memories:\n'
-            '${relevantMemories.map((m) => m.content).join('\n')}'
+              '${relevantMemories.map((m) => m.content).join('\n')}'
         : '';
 
     // One planner call. If it decides no tools are needed we answer directly,
@@ -89,10 +90,10 @@ class AgentOrchestrator {
 
   /// Planner. Returns null when the model did not produce a usable plan.
   Future<AgentPlan?> _plan(String message, String memoryContext) async {
-    final toolSchemas =
-        _tools.toolsForModel.map((t) => t.schema).join('\n\n');
+    final toolSchemas = _tools.toolsForModel.map((t) => t.schema).join('\n\n');
 
-    final prompt = '''$memoryContext
+    final prompt =
+        '''$memoryContext
 
 You are a planning assistant. Decide whether the user's request needs any of the
 tools listed below. Reply with ONLY a JSON object: {"plan": [{"step": "...",
@@ -198,11 +199,14 @@ $toolSchemas
     // Tool output is DATA, not instructions. A web page or a note can contain
     // text that looks like a command; delimiting it and saying so is the
     // cheapest defence against the model acting on it.
-    final summary = results.entries.map((e) {
-      return '${e.key}:\n<<<TOOL_OUTPUT\n${e.value.toJson()}\nTOOL_OUTPUT>>>';
-    }).join('\n\n');
+    final summary = results.entries
+        .map((e) {
+          return '${e.key}:\n<<<TOOL_OUTPUT\n${e.value.toJson()}\nTOOL_OUTPUT>>>';
+        })
+        .join('\n\n');
 
-    final prompt = '''$memoryContext
+    final prompt =
+        '''$memoryContext
 
 The user asked: $userMessage
 

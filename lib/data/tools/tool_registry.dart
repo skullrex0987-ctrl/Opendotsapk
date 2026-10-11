@@ -42,121 +42,149 @@ class ToolRegistry {
   void registerTools() {
     void add(ToolDefinition def) => _tools[def.name] = def;
 
-    add(ToolDefinition(
-      name: 'send_sms',
-      description: 'Compose an SMS to a recipient in the messaging app. The '
-          'user must tap send; this does not send anything by itself.',
-      parameters: {
-        'recipient': {'type': 'string', 'description': 'Phone number'},
-        'message': {'type': 'string', 'description': 'Message content'},
-      },
-      required: ['recipient', 'message'],
-      implemented: false,
-      unimplementedReason: 'Opens the system SMS composer; not yet wired.',
-    ));
+    add(
+      ToolDefinition(
+        name: 'send_sms',
+        description:
+            'Compose an SMS to a recipient in the messaging app. The '
+            'user must tap send; this does not send anything by itself.',
+        parameters: {
+          'recipient': {'type': 'string', 'description': 'Phone number'},
+          'message': {'type': 'string', 'description': 'Message content'},
+        },
+        required: ['recipient', 'message'],
+        implemented: false,
+        unimplementedReason: 'Opens the system SMS composer; not yet wired.',
+      ),
+    );
 
-    add(ToolDefinition(
-      name: 'create_calendar_event',
-      description: 'Create a calendar event.',
-      parameters: {
-        'title': {'type': 'string', 'description': 'Event title'},
-        'start_time': {'type': 'string', 'description': 'Start time (ISO8601)'},
-        'end_time': {'type': 'string', 'description': 'End time (ISO8601)'},
-        'location': {'type': 'string', 'description': 'Event location'},
-      },
-      required: ['title', 'start_time'],
-      implemented: false,
-      unimplementedReason: 'Needs a calendar insert Intent; not yet wired.',
-    ));
+    add(
+      ToolDefinition(
+        name: 'create_calendar_event',
+        description: 'Create a calendar event.',
+        parameters: {
+          'title': {'type': 'string', 'description': 'Event title'},
+          'start_time': {
+            'type': 'string',
+            'description': 'Start time (ISO8601)',
+          },
+          'end_time': {'type': 'string', 'description': 'End time (ISO8601)'},
+          'location': {'type': 'string', 'description': 'Event location'},
+        },
+        required: ['title', 'start_time'],
+        implemented: false,
+        unimplementedReason: 'Needs a calendar insert Intent; not yet wired.',
+      ),
+    );
 
-    add(ToolDefinition(
-      name: 'add_contact',
-      description: 'Add a new contact.',
-      parameters: {
-        'name': {'type': 'string', 'description': 'Contact name'},
-        'phone': {'type': 'string', 'description': 'Phone number'},
-        'email': {'type': 'string', 'description': 'Email'},
-      },
-      required: ['name'],
-      implemented: false,
-      unimplementedReason: 'Needs a contacts insert Intent; not yet wired.',
-    ));
+    add(
+      ToolDefinition(
+        name: 'add_contact',
+        description: 'Add a new contact.',
+        parameters: {
+          'name': {'type': 'string', 'description': 'Contact name'},
+          'phone': {'type': 'string', 'description': 'Phone number'},
+          'email': {'type': 'string', 'description': 'Email'},
+        },
+        required: ['name'],
+        implemented: false,
+        unimplementedReason: 'Needs a contacts insert Intent; not yet wired.',
+      ),
+    );
 
-    add(ToolDefinition(
-      name: 'set_alarm',
-      description: 'Set an alarm.',
-      parameters: {
-        'time': {'type': 'string', 'description': 'Alarm time (ISO8601)'},
-        'label': {'type': 'string', 'description': 'Alarm label'},
-      },
-      required: ['time'],
-      implemented: false,
-      unimplementedReason: 'Needs the AlarmClock Intent; not yet wired.',
-    ));
+    add(
+      ToolDefinition(
+        name: 'set_alarm',
+        description: 'Set an alarm.',
+        parameters: {
+          'time': {'type': 'string', 'description': 'Alarm time (ISO8601)'},
+          'label': {'type': 'string', 'description': 'Alarm label'},
+        },
+        required: ['time'],
+        implemented: false,
+        unimplementedReason: 'Needs the AlarmClock Intent; not yet wired.',
+      ),
+    );
 
-    add(ToolDefinition(
-      name: 'open_app',
-      description: 'Open an app by package name.',
-      parameters: {
-        'package_name': {'type': 'string', 'description': 'App package name'},
-      },
-      required: ['package_name'],
-      implemented: false,
-      unimplementedReason: 'Needs a launch Intent; not yet wired.',
-    ));
+    add(
+      ToolDefinition(
+        name: 'open_app',
+        description: 'Open an app by package name.',
+        parameters: {
+          'package_name': {'type': 'string', 'description': 'App package name'},
+        },
+        required: ['package_name'],
+        implemented: false,
+        unimplementedReason: 'Needs a launch Intent; not yet wired.',
+      ),
+    );
 
-    add(ToolDefinition(
-      name: 'web_search',
-      description: 'Search the web with DuckDuckGo.',
-      parameters: {
-        'query': {'type': 'string', 'description': 'Search query'},
-      },
-      required: ['query'],
-      implemented: true,
-    ));
+    add(
+      ToolDefinition(
+        name: 'web_search',
+        description: 'Search the web with DuckDuckGo.',
+        parameters: {
+          'query': {'type': 'string', 'description': 'Search query'},
+        },
+        required: ['query'],
+        implemented: true,
+      ),
+    );
 
-    add(ToolDefinition(
-      name: 'get_location',
-      description: 'Get the device current location.',
-      parameters: {},
-      required: const [],
-      implemented: true,
-    ));
+    add(
+      ToolDefinition(
+        name: 'get_location',
+        description: 'Get the device current location.',
+        parameters: {},
+        required: const [],
+        implemented: true,
+      ),
+    );
 
-    add(ToolDefinition(
-      name: 'create_note',
-      description: 'Save a note on the device.',
-      parameters: {
-        'title': {'type': 'string', 'description': 'Note title'},
-        'content': {'type': 'string', 'description': 'Note content'},
-      },
-      required: ['title', 'content'],
-      implemented: false,
-      unimplementedReason: 'Needs the notes table; not yet wired.',
-    ));
+    add(
+      ToolDefinition(
+        name: 'create_note',
+        description: 'Save a note on the device.',
+        parameters: {
+          'title': {'type': 'string', 'description': 'Note title'},
+          'content': {'type': 'string', 'description': 'Note content'},
+        },
+        required: ['title', 'content'],
+        implemented: false,
+        unimplementedReason: 'Needs the notes table; not yet wired.',
+      ),
+    );
 
-    add(ToolDefinition(
-      name: 'read_notes',
-      description: 'Read notes matching a query.',
-      parameters: {
-        'query': {'type': 'string', 'description': 'Search query'},
-      },
-      required: const [],
-      implemented: false,
-      unimplementedReason: 'Needs the notes table; not yet wired.',
-    ));
+    add(
+      ToolDefinition(
+        name: 'read_notes',
+        description: 'Read notes matching a query.',
+        parameters: {
+          'query': {'type': 'string', 'description': 'Search query'},
+        },
+        required: const [],
+        implemented: false,
+        unimplementedReason: 'Needs the notes table; not yet wired.',
+      ),
+    );
 
-    add(ToolDefinition(
-      name: 'analyze_image',
-      description: 'Look at a picture on the device with the local vision '
-          'model (Moondream2). Needs a downloaded vision model.',
-      parameters: {
-        'path': {'type': 'string', 'description': 'Absolute path to the image'},
-        'question': {'type': 'string', 'description': 'What to ask'},
-      },
-      required: ['path'],
-      implemented: true,
-    ));
+    add(
+      ToolDefinition(
+        name: 'analyze_image',
+        description:
+            'Look at a picture on the device with the local vision '
+            'model (Moondream2). Needs a downloaded vision model.',
+        parameters: {
+          'path': {
+            'type': 'string',
+            'description': 'Absolute path to the image',
+          },
+          'question': {'type': 'string', 'description': 'What to ask'},
+        },
+        required: ['path'],
+        implemented: true,
+      ),
+    );
   }
 
   /// Every registered definition, implemented or not.
@@ -212,13 +240,17 @@ class ToolRegistry {
 
     try {
       final response = await http
-          .get(Uri.parse(
-            'https://lite.duckduckgo.com/lite/?q=${Uri.encodeComponent(query)}',
-          ))
+          .get(
+            Uri.parse(
+              'https://lite.duckduckgo.com/lite/?q=${Uri.encodeComponent(query)}',
+            ),
+          )
           .timeout(const Duration(seconds: 20));
 
       if (response.statusCode != 200) {
-        return ToolResult.failed('Search returned HTTP ${response.statusCode}.');
+        return ToolResult.failed(
+          'Search returned HTTP ${response.statusCode}.',
+        );
       }
 
       final results = _parseDuckDuckGoResults(response.body);
@@ -315,7 +347,8 @@ class ToolRegistry {
     final lines = html.split('\n');
 
     for (final line in lines) {
-      if (line.contains('class="result__a"') || line.contains('result__title')) {
+      if (line.contains('class="result__a"') ||
+          line.contains('result__title')) {
         final start = line.indexOf('>') + 1;
         final end = line.indexOf('<', start);
         if (start > 0 && end > start) {
@@ -364,18 +397,18 @@ class ToolDefinition {
   /// containing a quote produced invalid JSON that the model could not parse.
   /// `jsonEncode` escapes correctly by construction.
   String get schema => jsonEncode({
-        'name': name,
-        'description': description,
-        'parameters': {
-          'type': 'object',
-          'properties': {
-            for (final entry in parameters.entries)
-              entry.key: {
-                'type': (entry.value as Map)['type'],
-                'description': (entry.value as Map)['description'],
-              },
+    'name': name,
+    'description': description,
+    'parameters': {
+      'type': 'object',
+      'properties': {
+        for (final entry in parameters.entries)
+          entry.key: {
+            'type': (entry.value as Map)['type'],
+            'description': (entry.value as Map)['description'],
           },
-          'required': required,
-        },
-      });
+      },
+      'required': required,
+    },
+  });
 }

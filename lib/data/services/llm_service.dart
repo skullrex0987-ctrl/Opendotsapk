@@ -452,9 +452,11 @@ class LlmService {
   int get gpuLayers => _gpuLayers;
   bool get isVisionLoaded => _isVisionLoaded;
   String? get visionProjectorPath => _visionProjectorPath;
+
   /// Which backend is currently active: 'vulkan', 'cpu', or null before any load.
   String? get activeBackend => _activeBackend;
 
   /// True when [model] can answer image questions in the current session.
-  bool canSee(LocalModel model) => _isLoaded && _isVisionLoaded && model.isVision;
+  bool canSee(LocalModel model) =>
+      _isLoaded && _isVisionLoaded && model.isVision;
 }

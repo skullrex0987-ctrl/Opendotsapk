@@ -12,12 +12,61 @@ class TextUtils {
   /// Rough English stop-word set. Used only to down-weight query terms during
   /// keyword scoring — never to drop content from stored documents.
   static const Set<String> stopWords = {
-    'a', 'an', 'and', 'are', 'as', 'at', 'be', 'but', 'by', 'for', 'from',
-    'had', 'has', 'have', 'he', 'her', 'his', 'i', 'if', 'in', 'into', 'is',
-    'it', 'its', 'me', 'my', 'no', 'not', 'of', 'on', 'or', 'our', 'so',
-    'that', 'the', 'their', 'them', 'then', 'there', 'these', 'they', 'this',
-    'to', 'was', 'we', 'were', 'what', 'when', 'where', 'which', 'who',
-    'will', 'with', 'you', 'your',
+    'a',
+    'an',
+    'and',
+    'are',
+    'as',
+    'at',
+    'be',
+    'but',
+    'by',
+    'for',
+    'from',
+    'had',
+    'has',
+    'have',
+    'he',
+    'her',
+    'his',
+    'i',
+    'if',
+    'in',
+    'into',
+    'is',
+    'it',
+    'its',
+    'me',
+    'my',
+    'no',
+    'not',
+    'of',
+    'on',
+    'or',
+    'our',
+    'so',
+    'that',
+    'the',
+    'their',
+    'them',
+    'then',
+    'there',
+    'these',
+    'they',
+    'this',
+    'to',
+    'was',
+    'we',
+    'were',
+    'what',
+    'when',
+    'where',
+    'which',
+    'who',
+    'will',
+    'with',
+    'you',
+    'your',
   };
 
   /// Lowercase word tokens, keeping intra-word apostrophes and digits.
@@ -47,7 +96,8 @@ class TextUtils {
     flush();
 
     // Trim trailing apostrophes so "dogs'" == "dogs".
-    return out.map((t) => t.replaceAll(RegExp(r"^'+|'+$"), ''))
+    return out
+        .map((t) => t.replaceAll(RegExp(r"^'+|'+$"), ''))
         .where((t) => t.isNotEmpty)
         .toList();
   }

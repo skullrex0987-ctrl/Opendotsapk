@@ -111,8 +111,10 @@ class CloudService {
       );
     }
 
-    Log.i('cloud: ${provider.id} / ${turn.modelId} '
-        '(${turn.messages.length} msgs, ${turn.imageBase64.length} images)');
+    Log.i(
+      'cloud: ${provider.id} / ${turn.modelId} '
+      '(${turn.messages.length} msgs, ${turn.imageBase64.length} images)',
+    );
 
     switch (provider.wireFormat) {
       case CloudWireFormat.openAiCompatible:
@@ -492,7 +494,9 @@ class CloudService {
   static const Duration _inactivityTimeout = Duration(seconds: 60);
 
   Stream<String> _sseFromRequest(http.Request request) async* {
-    final response = await _client.send(request).timeout(
+    final response = await _client
+        .send(request)
+        .timeout(
           _connectTimeout,
           onTimeout: () => throw CloudException(
             'The provider did not start responding within '
@@ -579,7 +583,8 @@ class CloudService {
 
     var cost = 0.0;
     if (model != null) {
-      cost = (pt / 1e6) * model.inputPricePerM +
+      cost =
+          (pt / 1e6) * model.inputPricePerM +
           (completionTokens / 1e6) * model.outputPricePerM;
     }
 
@@ -587,11 +592,13 @@ class CloudService {
     sessionCompletionTokens += completionTokens;
     sessionCostUsd += cost;
 
-    onUsage?.call(CloudUsage(
-      promptTokens: pt,
-      completionTokens: completionTokens,
-      estimatedCostUsd: cost,
-    ));
+    onUsage?.call(
+      CloudUsage(
+        promptTokens: pt,
+        completionTokens: completionTokens,
+        estimatedCostUsd: cost,
+      ),
+    );
   }
 
   static Map<String, dynamic>? _tryJson(String s) {

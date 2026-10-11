@@ -37,10 +37,7 @@ class ActivityScreen extends ConsumerWidget {
           ),
         ),
         body: const TabBarView(
-          children: [
-            _ToolActivityTab(),
-            _DiagnosticsTab(),
-          ],
+          children: [_ToolActivityTab(), _DiagnosticsTab()],
         ),
       ),
     );
@@ -191,10 +188,7 @@ class _DiagnosticsTabState extends State<_DiagnosticsTab> {
 class ActivityEntry extends StatelessWidget {
   final Map<String, dynamic> entry;
 
-  const ActivityEntry({
-    super.key,
-    required this.entry,
-  });
+  const ActivityEntry({super.key, required this.entry});
 
   @override
   Widget build(BuildContext context) {
@@ -217,10 +211,8 @@ class ActivityEntry extends StatelessWidget {
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (entry['params'] != null)
-              Text('Params: ${entry['params']}'),
-            if (entry['result'] != null)
-              Text('Result: ${entry['result']}'),
+            if (entry['params'] != null) Text('Params: ${entry['params']}'),
+            if (entry['result'] != null) Text('Result: ${entry['result']}'),
             Text(
               _formatTimestamp(entry['timestamp'] as int?),
               style: TextStyle(color: Colors.grey[500], fontSize: 12),

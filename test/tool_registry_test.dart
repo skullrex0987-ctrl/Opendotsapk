@@ -24,8 +24,11 @@ void main() {
         // description containing a quote produced invalid JSON. Decoding is
         // the only way to know it is well formed.
         final decoded = jsonDecode(def.schema);
-        expect(decoded, isA<Map<String, dynamic>>(),
-            reason: '${def.name} schema did not decode to an object');
+        expect(
+          decoded,
+          isA<Map<String, dynamic>>(),
+          reason: '${def.name} schema did not decode to an object',
+        );
       }
     });
 
@@ -77,8 +80,11 @@ void main() {
       // no tool ever set `optional`, so this was a null-check on null and threw.
       for (final def in registry.tools.values) {
         for (final entry in def.parameters.entries) {
-          expect((entry.value as Map).containsKey('optional'), isFalse,
-              reason: '${def.name}.${entry.key} still carries "optional"');
+          expect(
+            (entry.value as Map).containsKey('optional'),
+            isFalse,
+            reason: '${def.name}.${entry.key} still carries "optional"',
+          );
         }
       }
     });
@@ -103,12 +109,16 @@ void main() {
       expect(offered, isNot(contains('add_contact')));
       expect(offered, isNot(contains('open_app')));
 
-      expect(offered.length, registry.tools.values.where((t) => t.implemented).length);
+      expect(
+        offered.length,
+        registry.tools.values.where((t) => t.implemented).length,
+      );
     });
 
     test('no unimplemented tool can ever report success', () async {
-      final unimplemented =
-          registry.tools.values.where((t) => !t.implemented).toList();
+      final unimplemented = registry.tools.values
+          .where((t) => !t.implemented)
+          .toList();
       expect(unimplemented, isNotEmpty);
 
       for (final def in unimplemented) {
@@ -116,11 +126,17 @@ void main() {
           toolName: def.name,
           params: const {},
         );
-        expect(result.status, ToolStatus.unsupported,
-            reason: '${def.name} must not claim success');
+        expect(
+          result.status,
+          ToolStatus.unsupported,
+          reason: '${def.name} must not claim success',
+        );
         expect(result.isSuccess, isFalse);
-        expect(result.message, isNotEmpty,
-            reason: '${def.name} must explain why it cannot run');
+        expect(
+          result.message,
+          isNotEmpty,
+          reason: '${def.name} must explain why it cannot run',
+        );
       }
     });
 
@@ -145,24 +161,38 @@ void main() {
       expect(ToolResult.success('x').status.wire, 'success');
       expect(ToolResult.failed('x').status.wire, 'failed');
       expect(ToolResult.unsupported('x').status.wire, 'unsupported');
-      expect(ToolResult.requiresPermission('x').status.wire,
-          'requires_permission');
-      expect(ToolResult.awaitingConfirmation('x').status.wire,
-          'awaiting_confirmation');
-      expect(ToolResult.requiresUserAction('x').status.wire,
-          'requires_user_action');
+      expect(
+        ToolResult.requiresPermission('x').status.wire,
+        'requires_permission',
+      );
+      expect(
+        ToolResult.awaitingConfirmation('x').status.wire,
+        'awaiting_confirmation',
+      );
+      expect(
+        ToolResult.requiresUserAction('x').status.wire,
+        'requires_user_action',
+      );
     });
 
     test('only success counts as a completed action', () {
       expect(ToolResult.success('ok').isCompletedAction, isTrue);
 
       // Opening the SMS composer is not the same as sending a message.
-      expect(ToolResult.requiresUserAction('composer opened').isCompletedAction,
-          isFalse);
+      expect(
+        ToolResult.requiresUserAction('composer opened').isCompletedAction,
+        isFalse,
+      );
       expect(ToolResult.unsupported('nope').isCompletedAction, isFalse);
       expect(ToolResult.failed('boom').isCompletedAction, isFalse);
-      expect(ToolResult.requiresPermission('need it').isCompletedAction, isFalse);
-      expect(ToolResult.awaitingConfirmation('ask me').isCompletedAction, isFalse);
+      expect(
+        ToolResult.requiresPermission('need it').isCompletedAction,
+        isFalse,
+      );
+      expect(
+        ToolResult.awaitingConfirmation('ask me').isCompletedAction,
+        isFalse,
+      );
     });
 
     test('never reports success for a non-success status', () {

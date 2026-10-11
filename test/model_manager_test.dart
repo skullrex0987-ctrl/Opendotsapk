@@ -58,18 +58,21 @@ void main() {
       expect(v.verdict, DownloadVerdict.truncated);
     });
 
-    test('rejects a short body even when it claims success (Content-Length)', () {
-      // A chunked/early-closed body can end "cleanly" but short; comparing to
-      // the server's own Content-Length catches it.
-      final v = verifyDownload(
-        receivedBytes: 900,
-        expectedSize: 1000,
-        contentLength: 1000,
-        expectedSha256: _shaA,
-        actualSha256: _shaA,
-      );
-      expect(v.verdict, DownloadVerdict.truncated);
-    });
+    test(
+      'rejects a short body even when it claims success (Content-Length)',
+      () {
+        // A chunked/early-closed body can end "cleanly" but short; comparing to
+        // the server's own Content-Length catches it.
+        final v = verifyDownload(
+          receivedBytes: 900,
+          expectedSize: 1000,
+          contentLength: 1000,
+          expectedSha256: _shaA,
+          actualSha256: _shaA,
+        );
+        expect(v.verdict, DownloadVerdict.truncated);
+      },
+    );
 
     test('rejects a file larger than expected', () {
       final v = verifyDownload(
@@ -100,8 +103,11 @@ void main() {
           expectedSha256: bad,
           actualSha256: _shaA,
         );
-        expect(v.verdict, DownloadVerdict.missingChecksum,
-            reason: 'expectedSha256=$bad');
+        expect(
+          v.verdict,
+          DownloadVerdict.missingChecksum,
+          reason: 'expectedSha256=$bad',
+        );
       }
     });
 
@@ -255,12 +261,18 @@ void main() {
     test('a 416 or any other status triggers a restart', () {
       expect(
         interpretRangedGet(
-            statusCode: 416, requestedStart: 1000, contentRangeStart: null),
+          statusCode: 416,
+          requestedStart: 1000,
+          contentRangeStart: null,
+        ),
         RangeVerdict.restart,
       );
       expect(
         interpretRangedGet(
-            statusCode: 500, requestedStart: 1000, contentRangeStart: null),
+          statusCode: 500,
+          requestedStart: 1000,
+          contentRangeStart: null,
+        ),
         RangeVerdict.restart,
       );
     });
@@ -303,8 +315,10 @@ void main() {
 
     test('refuses a non-commit sha instead of falling back to main', () {
       expect(
-        () => pinToCommit('https://huggingface.co/a/b/resolve/main/x.gguf',
-            'main'),
+        () => pinToCommit(
+          'https://huggingface.co/a/b/resolve/main/x.gguf',
+          'main',
+        ),
         throwsArgumentError,
       );
       expect(
@@ -358,25 +372,33 @@ void main() {
         final integrity = integrityFor(m);
         expect(integrity, isNotNull, reason: '${m.id} has no manifest');
         final spec = integrity!;
-        expect(isImmutableCommitSha(spec.commitSha), isTrue,
-            reason: '${m.id} commit is not 40-hex');
+        expect(
+          isImmutableCommitSha(spec.commitSha),
+          isTrue,
+          reason: '${m.id} commit is not 40-hex',
+        );
         for (final f in m.files) {
           final entry = spec.files[f.name];
-          expect(entry, isNotNull,
-              reason: '${m.id} is missing an entry for ${f.name}');
+          expect(
+            entry,
+            isNotNull,
+            reason: '${m.id} is missing an entry for ${f.name}',
+          );
           final e = entry!;
           expect(e.size, greaterThan(0));
           expect(e.sha256.length, 64, reason: '${f.name} hash length');
-          expect(RegExp(r'^[0-9a-f]{64}$').hasMatch(e.sha256), isTrue,
-              reason: '${f.name} hash is not lowercase hex');
+          expect(
+            RegExp(r'^[0-9a-f]{64}$').hasMatch(e.sha256),
+            isTrue,
+            reason: '${f.name} hash is not lowercase hex',
+          );
         }
       }
     });
 
     test('moondream2 size covers weights and projector', () {
       final integrity = integrityFor(ModelCatalog.moondream2)!;
-      final total =
-          integrity.files.values.fold<int>(0, (a, f) => a + f.size);
+      final total = integrity.files.values.fold<int>(0, (a, f) => a + f.size);
       // 1,059,610,016 + 909,777,984
       expect(total, 1969388000);
       expect(ModelCatalog.moondream2.approxBytes, total);
@@ -384,8 +406,7 @@ void main() {
 
     test('qwen3.5 size covers weights and projector', () {
       final integrity = integrityFor(ModelCatalog.qwen35_08b)!;
-      final total =
-          integrity.files.values.fold<int>(0, (a, f) => a + f.size);
+      final total = integrity.files.values.fold<int>(0, (a, f) => a + f.size);
       // 532,517,120 weights + 204,987,232 mmproj
       expect(total, 737504352);
       expect(ModelCatalog.qwen35_08b.approxBytes, total);
@@ -394,10 +415,7 @@ void main() {
     test('qwen3.5 is pinned to an immutable commit, not main', () {
       final integrity = integrityFor(ModelCatalog.qwen35_08b)!;
       expect(isImmutableCommitSha(integrity.commitSha), isTrue);
-      expect(
-        integrity.commitSha,
-        '6ab461498e2023f6e3c1baea90a8f0fe38ab64d0',
-      );
+      expect(integrity.commitSha, '6ab461498e2023f6e3c1baea90a8f0fe38ab64d0');
     });
 
     test('every manifest entry keys back to a real catalog file', () {

@@ -120,17 +120,19 @@ void main() {
     List<int> buildDocx(String bodyText) {
       final archive = Archive();
 
-      archive.addFile(ArchiveFile(
-        'word/document.xml',
-        utf8.encode('''<?xml version="1.0"?>
+      archive.addFile(
+        ArchiveFile(
+          'word/document.xml',
+          utf8.encode('''<?xml version="1.0"?>
 <w:document xmlns:w="x"><w:body>
   <w:p><w:r><w:t>$bodyText</w:t></w:r></w:p>
 </w:body></w:document>''').length,
-        utf8.encode('''<?xml version="1.0"?>
+          utf8.encode('''<?xml version="1.0"?>
 <w:document xmlns:w="x"><w:body>
   <w:p><w:r><w:t>$bodyText</w:t></w:r></w:p>
 </w:body></w:document>'''),
-      ));
+        ),
+      );
 
       return ZipEncoder().encode(archive)!;
     }
@@ -150,8 +152,13 @@ void main() {
   <w:p><w:r><w:t>First paragraph</w:t></w:r></w:p>
   <w:p><w:r><w:t>Second paragraph</w:t></w:r></w:p>
 </w:body></w:document>''';
-      archive.addFile(ArchiveFile(
-        'word/document.xml', utf8.encode(xml).length, utf8.encode(xml)));
+      archive.addFile(
+        ArchiveFile(
+          'word/document.xml',
+          utf8.encode(xml).length,
+          utf8.encode(xml),
+        ),
+      );
       final f = await write('multi.docx', ZipEncoder().encode(archive)!);
 
       final doc = await DocumentService.instance.ingest(f.path);
@@ -161,8 +168,7 @@ void main() {
 
     test('rejects a docx with no readable body', () async {
       final archive = Archive();
-      archive.addFile(ArchiveFile(
-        'word/styles.xml', 5, utf8.encode('<a/>')));
+      archive.addFile(ArchiveFile('word/styles.xml', 5, utf8.encode('<a/>')));
       final f = await write('empty.docx', ZipEncoder().encode(archive)!);
 
       expect(
@@ -176,8 +182,9 @@ void main() {
     test('reads xhtml chapters and strips markup', () async {
       final archive = Archive();
       const xhtml = '<html><body><p>Chapter one text</p></body></html>';
-      archive.addFile(ArchiveFile(
-        'ch1.xhtml', utf8.encode(xhtml).length, utf8.encode(xhtml)));
+      archive.addFile(
+        ArchiveFile('ch1.xhtml', utf8.encode(xhtml).length, utf8.encode(xhtml)),
+      );
 
       final f = await write('book.epub', ZipEncoder().encode(archive)!);
       final doc = await DocumentService.instance.ingest(f.path);
@@ -209,13 +216,15 @@ void main() {
       );
     });
 
-    test('an empty file yields no chunks and is flagged rather than throwing',
-        () async {
-      final f = await writeText('empty.txt', '');
-      final doc = await DocumentService.instance.ingest(f.path);
-      expect(doc.chunks, isEmpty);
-      expect(doc.text, isEmpty);
-    });
+    test(
+      'an empty file yields no chunks and is flagged rather than throwing',
+      () async {
+        final f = await writeText('empty.txt', '');
+        final doc = await DocumentService.instance.ingest(f.path);
+        expect(doc.chunks, isEmpty);
+        expect(doc.text, isEmpty);
+      },
+    );
 
     test('a whitespace-only file yields no chunks', () async {
       final f = await writeText('ws.txt', '   \n\n\t  \n');
@@ -223,10 +232,10 @@ void main() {
       expect(doc.chunks, isEmpty);
     });
 
-    test('a PDF with no text layer is flagged, not silently "summarised"',
-        () async {
+    test('a PDF with no text layer is flagged, not silently "summarised"', () async {
       // Minimal PDF whose streams contain no text operators.
-      const pdf = '%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF';
+      const pdf =
+          '%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF';
       final f = await write('scan.pdf', utf8.encode(pdf));
       final doc = await DocumentService.instance.ingest(f.path);
 
@@ -234,12 +243,14 @@ void main() {
       expect(doc.textLayerMissing, isTrue);
     });
 
-    test('extractor returns empty rather than throwing on garbage input',
-        () async {
-      final f = await write('junk.pdf', List.filled(2048, 0x00));
-      final doc = await DocumentService.instance.ingest(f.path);
-      expect(doc.text, isEmpty);
-    });
+    test(
+      'extractor returns empty rather than throwing on garbage input',
+      () async {
+        final f = await write('junk.pdf', List.filled(2048, 0x00));
+        final doc = await DocumentService.instance.ingest(f.path);
+        expect(doc.text, isEmpty);
+      },
+    );
   });
 
   group('PDF text extraction', () {

@@ -3,6 +3,7 @@
 /// Five destinations. Chat and the model list are separate because picking a
 /// model is a settings-shaped task, while Memory and Activity are read-mostly.
 import 'package:flutter/material.dart';
+
 import 'chat_screen.dart';
 import 'memory_screen.dart';
 import 'activity_screen.dart';
@@ -35,8 +36,7 @@ class _MainScreenState extends State<MainScreen> {
       body: IndexedStack(index: _currentIndex, children: _screens),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
-        onDestinationSelected: (index) =>
-            setState(() => _currentIndex = index),
+        onDestinationSelected: (index) => setState(() => _currentIndex = index),
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.chat_bubble_outline),

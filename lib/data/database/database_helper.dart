@@ -309,8 +309,10 @@ class DatabaseHelper {
     String sourceType = 'message',
   }) async {
     if (vector.length != AppConstants.vectorDimension) {
-      Log.w('refusing to store memory: expected '
-          '${AppConstants.vectorDimension} dims, got ${vector.length}');
+      Log.w(
+        'refusing to store memory: expected '
+        '${AppConstants.vectorDimension} dims, got ${vector.length}',
+      );
       throw ArgumentError('embedding dimension mismatch');
     }
 
@@ -347,8 +349,11 @@ class DatabaseHelper {
   /// Every stored memory, newest first, decrypted.
   Future<List<Map<String, dynamic>>> getMemories({int limit = 500}) async {
     final db = await database;
-    final rows = await db.query(tableVectors,
-        orderBy: 'created_at DESC', limit: limit);
+    final rows = await db.query(
+      tableVectors,
+      orderBy: 'created_at DESC',
+      limit: limit,
+    );
 
     final out = <Map<String, dynamic>>[];
     for (final r in rows) {
@@ -371,7 +376,9 @@ class DatabaseHelper {
     for (final c in all) {
       final s = TextUtils.cosine(queryVector, c.vector);
       if (s >= minScore) {
-        hits.add(MemoryHit(memory: c, vectorScore: s, keywordScore: 0, score: s));
+        hits.add(
+          MemoryHit(memory: c, vectorScore: s, keywordScore: 0, score: s),
+        );
       }
     }
     hits.sort((a, b) => b.score.compareTo(a.score));
@@ -411,7 +418,8 @@ class DatabaseHelper {
           final tf = c.termFreq[term];
           if (tf == null) continue;
           final idf = stats.idf(term);
-          final denom = tf +
+          final denom =
+              tf +
               stats.k1 *
                   (1 - stats.b + stats.b * (c.tokenCount / stats.avgLength));
           score += idf * ((tf * (stats.k1 + 1)) / denom);
@@ -449,12 +457,14 @@ class DatabaseHelper {
       }
 
       if (combined <= 0) continue;
-      fused.add(MemoryHit(
-        memory: c,
-        vectorScore: vs,
-        keywordScore: kw,
-        score: combined,
-      ));
+      fused.add(
+        MemoryHit(
+          memory: c,
+          vectorScore: vs,
+          keywordScore: kw,
+          score: combined,
+        ),
+      );
     }
 
     fused.sort((a, b) => b.score.compareTo(a.score));
@@ -536,15 +546,17 @@ class DatabaseHelper {
         final text = decoded.value;
         final tokens = TextUtils.tokenize(text);
 
-        out.add(_Candidate(
-          id: r['id'] as int,
-          sourceId: '${r['source_id']}',
-          sourceType: '${r['source_type'] ?? 'message'}',
-          text: text,
-          vector: vector,
-          termFreq: TextUtils.termFrequencies(tokens),
-          tokenCount: tokens.length,
-        ));
+        out.add(
+          _Candidate(
+            id: r['id'] as int,
+            sourceId: '${r['source_id']}',
+            sourceType: '${r['source_type'] ?? 'message'}',
+            text: text,
+            vector: vector,
+            termFreq: TextUtils.termFrequencies(tokens),
+            tokenCount: tokens.length,
+          ),
+        );
       } catch (e) {
         Log.w('skipping unreadable memory row: $e');
       }
@@ -579,19 +591,15 @@ class DatabaseHelper {
     int chunkCount = 0,
   }) async {
     final db = await database;
-    await db.insert(
-      tableDocuments,
-      {
-        'id': id,
-        'name': name,
-        'path': path,
-        'mime': mime,
-        'char_count': charCount,
-        'chunk_count': chunkCount,
-        'added_at': DateTime.now().millisecondsSinceEpoch,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await db.insert(tableDocuments, {
+      'id': id,
+      'name': name,
+      'path': path,
+      'mime': mime,
+      'char_count': charCount,
+      'chunk_count': chunkCount,
+      'added_at': DateTime.now().millisecondsSinceEpoch,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<void> insertChunks({
@@ -670,8 +678,12 @@ class DatabaseHelper {
 
   Future<List<Map<String, dynamic>>> getChunksFor(String documentId) async {
     final db = await database;
-    final rows = await db.query(tableChunks,
-        where: 'document_id = ?', whereArgs: [documentId], orderBy: 'ordinal');
+    final rows = await db.query(
+      tableChunks,
+      where: 'document_id = ?',
+      whereArgs: [documentId],
+      orderBy: 'ordinal',
+    );
 
     final out = <Map<String, dynamic>>[];
     for (final r in rows) {
@@ -704,10 +716,12 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getNotes({String? query}) async {
     final db = await database;
     final rows = query != null && query.isNotEmpty
-        ? await db.query(tableNotes,
+        ? await db.query(
+            tableNotes,
             where: 'title LIKE ?',
             whereArgs: ['%$query%'],
-            orderBy: 'updated_at DESC')
+            orderBy: 'updated_at DESC',
+          )
         : await db.query(tableNotes, orderBy: 'updated_at DESC');
 
     final out = <Map<String, dynamic>>[];
@@ -751,8 +765,11 @@ class DatabaseHelper {
 
   Future<List<Map<String, dynamic>>> getActivityLog({int limit = 100}) async {
     final db = await database;
-    final rows = await db.query(tableActivityLog,
-        orderBy: 'timestamp DESC', limit: limit);
+    final rows = await db.query(
+      tableActivityLog,
+      orderBy: 'timestamp DESC',
+      limit: limit,
+    );
 
     final out = <Map<String, dynamic>>[];
     for (final r in rows) {
@@ -773,17 +790,20 @@ class DatabaseHelper {
 
   Future<void> savePreference(String key, String value) async {
     final db = await database;
-    await db.insert(
-      tableUserPreferences,
-      {'key': key, 'value': value},
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await db.insert(tableUserPreferences, {
+      'key': key,
+      'value': value,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<String?> getPreference(String key) async {
     final db = await database;
-    final r = await db.query(tableUserPreferences,
-        where: 'key = ?', whereArgs: [key], limit: 1);
+    final r = await db.query(
+      tableUserPreferences,
+      where: 'key = ?',
+      whereArgs: [key],
+      limit: 1,
+    );
     return r.isEmpty ? null : r.first['value'] as String?;
   }
 

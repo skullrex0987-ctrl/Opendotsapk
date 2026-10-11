@@ -21,12 +21,15 @@ void main() {
       expect(await GpuService.layersForMode('gpu'), 99);
     });
 
-    test('an unrecognised mode falls back to auto rather than crashing', () async {
-      // A stale preference string from an older build must not break loading.
-      GpuService.resetCache();
-      final layers = await GpuService.layersForMode('nonsense');
-      expect(layers, greaterThanOrEqualTo(0));
-    });
+    test(
+      'an unrecognised mode falls back to auto rather than crashing',
+      () async {
+        // A stale preference string from an older build must not break loading.
+        GpuService.resetCache();
+        final layers = await GpuService.layersForMode('nonsense');
+        expect(layers, greaterThanOrEqualTo(0));
+      },
+    );
   });
 
   group('GpuCapability', () {

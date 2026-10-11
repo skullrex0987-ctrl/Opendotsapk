@@ -41,10 +41,16 @@ void main() {
       );
 
       for (final m in wire) {
-        expect(m.containsKey('text'), isTrue,
-            reason: 'message $m has no text key');
-        expect(m.containsKey('content'), isFalse,
-            reason: 'message $m uses content, which the plugin cannot read');
+        expect(
+          m.containsKey('text'),
+          isTrue,
+          reason: 'message $m has no text key',
+        );
+        expect(
+          m.containsKey('content'),
+          isFalse,
+          reason: 'message $m uses content, which the plugin cannot read',
+        );
         expect(m['text'], isNotNull);
       }
     });
@@ -59,10 +65,18 @@ void main() {
         ],
       );
 
-      expect(wire.map((m) => m['role']).toList(),
-          ['system', 'user', 'assistant', 'user']);
-      expect(wire.map((m) => m['text']).toList(),
-          ['sys', 'q1', 'a1', 'current']);
+      expect(wire.map((m) => m['role']).toList(), [
+        'system',
+        'user',
+        'assistant',
+        'user',
+      ]);
+      expect(wire.map((m) => m['text']).toList(), [
+        'sys',
+        'q1',
+        'a1',
+        'current',
+      ]);
     });
 
     test('history entries that use content are migrated to text', () {

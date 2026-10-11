@@ -1,6 +1,7 @@
 /// Memory screen for RAG and stored memories
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../core/constants/app_constants.dart';
 
 class MemoryScreen extends ConsumerWidget {
@@ -21,7 +22,7 @@ class MemoryScreen extends ConsumerWidget {
       body: const MemoryList(),
     );
   }
-  
+
   void _showSearchDialog(BuildContext context) {
     showDialog(
       context: context,
@@ -38,7 +39,7 @@ class MemoryList extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     // In production, fetch from database
     final memories = _getMockMemories();
-    
+
     if (memories.isEmpty) {
       return const Center(
         child: Column(
@@ -59,7 +60,7 @@ class MemoryList extends ConsumerWidget {
         ),
       );
     }
-    
+
     return ListView.builder(
       padding: const EdgeInsets.all(16),
       itemCount: memories.length,
@@ -72,30 +73,36 @@ class MemoryList extends ConsumerWidget {
       },
     );
   }
-  
+
   List<Map<String, dynamic>> _getMockMemories() {
     return [
       {
         'id': '1',
         'content': 'User prefers concise responses',
-        'timestamp': DateTime.now().subtract(const Duration(hours: 2)).millisecondsSinceEpoch,
+        'timestamp': DateTime.now()
+            .subtract(const Duration(hours: 2))
+            .millisecondsSinceEpoch,
         'type': 'preference',
       },
       {
         'id': '2',
         'content': 'User asked about VPS status',
-        'timestamp': DateTime.now().subtract(const Duration(hours: 5)).millisecondsSinceEpoch,
+        'timestamp': DateTime.now()
+            .subtract(const Duration(hours: 5))
+            .millisecondsSinceEpoch,
         'type': 'conversation',
       },
       {
         'id': '3',
         'content': 'User is a Binance futures trader',
-        'timestamp': DateTime.now().subtract(const Duration(days: 1)).millisecondsSinceEpoch,
+        'timestamp': DateTime.now()
+            .subtract(const Duration(days: 1))
+            .millisecondsSinceEpoch,
         'type': 'profile',
       },
     ];
   }
-  
+
   void _deleteMemory(BuildContext context, int index) {
     showDialog(
       context: context,
@@ -124,12 +131,8 @@ class MemoryList extends ConsumerWidget {
 class MemoryCard extends StatelessWidget {
   final Map<String, dynamic> memory;
   final VoidCallback onDelete;
-  
-  const MemoryCard({
-    super.key,
-    required this.memory,
-    required this.onDelete,
-  });
+
+  const MemoryCard({super.key, required this.memory, required this.onDelete});
 
   @override
   Widget build(BuildContext context) {
@@ -138,7 +141,7 @@ class MemoryCard extends StatelessWidget {
       'conversation': Colors.blue,
       'profile': Colors.green,
     };
-    
+
     return Dismissible(
       key: Key(memory['id'] as String),
       direction: DismissDirection.endToStart,
@@ -176,21 +179,25 @@ class MemoryCard extends StatelessWidget {
       ),
     );
   }
-  
+
   IconData _getIconForType(String? type) {
     switch (type) {
-      case 'preference': return Icons.favorite;
-      case 'conversation': return Icons.chat;
-      case 'profile': return Icons.person;
-      default: return Icons.memory;
+      case 'preference':
+        return Icons.favorite;
+      case 'conversation':
+        return Icons.chat;
+      case 'profile':
+        return Icons.person;
+      default:
+        return Icons.memory;
     }
   }
-  
+
   String _formatTimestamp(int timestamp) {
     final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
     return '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
   }
-  
+
   void _editMemory(BuildContext context) {
     showDialog(
       context: context,
@@ -202,7 +209,7 @@ class MemoryCard extends StatelessWidget {
 /// Memory edit dialog
 class MemoryEditDialog extends StatefulWidget {
   final Map<String, dynamic> memory;
-  
+
   const MemoryEditDialog({super.key, required this.memory});
 
   @override
@@ -211,19 +218,19 @@ class MemoryEditDialog extends StatefulWidget {
 
 class _MemoryEditDialogState extends State<MemoryEditDialog> {
   late TextEditingController _controller;
-  
+
   @override
   void initState() {
     super.initState();
     _controller = TextEditingController(text: widget.memory['content']);
   }
-  
+
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -263,13 +270,13 @@ class MemorySearchDialog extends StatefulWidget {
 
 class _MemorySearchDialogState extends State<MemorySearchDialog> {
   final TextEditingController _controller = TextEditingController();
-  
+
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(

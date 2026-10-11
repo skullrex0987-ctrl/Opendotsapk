@@ -7,7 +7,7 @@ class ChatMessage {
   final String content;
   final int timestamp;
   final String? sessionId;
-  
+
   ChatMessage({
     required this.id,
     required this.role,
@@ -15,7 +15,7 @@ class ChatMessage {
     required this.timestamp,
     this.sessionId,
   });
-  
+
   Map<String, dynamic> toMap() {
     return {
       'id': id,
@@ -25,7 +25,7 @@ class ChatMessage {
       'session_id': sessionId,
     };
   }
-  
+
   factory ChatMessage.fromMap(Map<String, dynamic> map) {
     return ChatMessage(
       id: map['id'] as String,
@@ -35,7 +35,7 @@ class ChatMessage {
       sessionId: map['session_id'] as String?,
     );
   }
-  
+
   ChatMessage copyWith({
     String? id,
     String? role,
@@ -59,14 +59,14 @@ class ToolCall {
   final String name;
   final Map<String, dynamic> params;
   final String? result;
-  
+
   ToolCall({
     required this.id,
     required this.name,
     required this.params,
     this.result,
   });
-  
+
   Map<String, dynamic> toMap() {
     return {
       'id': id,
@@ -75,7 +75,7 @@ class ToolCall {
       'result': result,
     };
   }
-  
+
   factory ToolCall.fromMap(Map<String, dynamic> map) {
     // `params` may arrive as a JSON string (from the agent pipeline) or as a
     // decoded map (from a database row). Handle both instead of hard-casting.
@@ -85,9 +85,7 @@ class ToolCall {
       params = Map<String, dynamic>.from(rawParams);
     } else if (rawParams is String && rawParams.isNotEmpty) {
       try {
-        params = Map<String, dynamic>.from(
-          jsonDecode(rawParams) as Map,
-        );
+        params = Map<String, dynamic>.from(jsonDecode(rawParams) as Map);
       } catch (_) {
         params = <String, dynamic>{};
       }
@@ -107,16 +105,18 @@ class ToolCall {
 /// Plan model from Planner agent
 class AgentPlan {
   final List<PlanStep> steps;
-  
+
   AgentPlan({required this.steps});
-  
+
   factory AgentPlan.fromJson(Map<String, dynamic> json) {
     final steps = json['plan'] as List<dynamic>;
     return AgentPlan(
-      steps: steps.map((s) => PlanStep.fromMap(s as Map<String, dynamic>)).toList(),
+      steps: steps
+          .map((s) => PlanStep.fromMap(s as Map<String, dynamic>))
+          .toList(),
     );
   }
-  
+
   Map<String, dynamic> toJson() {
     return {'plan': steps.map((s) => s.toMap()).toList()};
   }
@@ -127,13 +127,9 @@ class PlanStep {
   final String description;
   final String? toolName;
   final Map<String, dynamic> params;
-  
-  PlanStep({
-    required this.description,
-    this.toolName,
-    this.params = const {},
-  });
-  
+
+  PlanStep({required this.description, this.toolName, this.params = const {}});
+
   factory PlanStep.fromMap(Map<String, dynamic> map) {
     return PlanStep(
       description: map['step'] as String,
@@ -141,13 +137,9 @@ class PlanStep {
       params: Map<String, dynamic>.from(map['params'] ?? {}),
     );
   }
-  
+
   Map<String, dynamic> toMap() {
-    return {
-      'step': description,
-      'tool': toolName,
-      'params': params,
-    };
+    return {'step': description, 'tool': toolName, 'params': params};
   }
 }
 
@@ -164,7 +156,7 @@ class MemoryEntry {
   final String content;
   final int timestamp;
   final List<double> embedding;
-  
+
   MemoryEntry({
     required this.id,
     required this.content,

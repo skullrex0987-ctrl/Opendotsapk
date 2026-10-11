@@ -33,26 +33,50 @@ double fuse({
   required double keywordScore,
   double vectorWeight = 0.6,
   double keywordWeight = 0.4,
-}) =>
-    vectorWeight * vectorScore + keywordWeight * keywordScore;
+}) => vectorWeight * vectorScore + keywordWeight * keywordScore;
 
 void main() {
   group('BM25', () {
     test('a rarer term scores higher than a common one', () {
       final rare = bm25(
-        termFreq: 1, docFreq: 1, docCount: 100, docLength: 50, avgLength: 50);
+        termFreq: 1,
+        docFreq: 1,
+        docCount: 100,
+        docLength: 50,
+        avgLength: 50,
+      );
       final common = bm25(
-        termFreq: 1, docFreq: 95, docCount: 100, docLength: 50, avgLength: 50);
+        termFreq: 1,
+        docFreq: 95,
+        docCount: 100,
+        docLength: 50,
+        avgLength: 50,
+      );
       expect(rare, greaterThan(common));
     });
 
     test('more occurrences score higher, with diminishing returns', () {
       final once = bm25(
-        termFreq: 1, docFreq: 10, docCount: 100, docLength: 50, avgLength: 50);
+        termFreq: 1,
+        docFreq: 10,
+        docCount: 100,
+        docLength: 50,
+        avgLength: 50,
+      );
       final twice = bm25(
-        termFreq: 2, docFreq: 10, docCount: 100, docLength: 50, avgLength: 50);
+        termFreq: 2,
+        docFreq: 10,
+        docCount: 100,
+        docLength: 50,
+        avgLength: 50,
+      );
       final thrice = bm25(
-        termFreq: 3, docFreq: 10, docCount: 100, docLength: 50, avgLength: 50);
+        termFreq: 3,
+        docFreq: 10,
+        docCount: 100,
+        docLength: 50,
+        avgLength: 50,
+      );
 
       expect(twice, greaterThan(once));
       expect(thrice, greaterThan(twice));
@@ -62,15 +86,30 @@ void main() {
 
     test('a term present in every document contributes almost nothing', () {
       final universal = bm25(
-        termFreq: 3, docFreq: 100, docCount: 100, docLength: 50, avgLength: 50);
+        termFreq: 3,
+        docFreq: 100,
+        docCount: 100,
+        docLength: 50,
+        avgLength: 50,
+      );
       expect(universal, lessThan(0.02));
     });
 
     test('longer documents are penalised for the same term frequency', () {
       final short = bm25(
-        termFreq: 2, docFreq: 10, docCount: 100, docLength: 20, avgLength: 50);
+        termFreq: 2,
+        docFreq: 10,
+        docCount: 100,
+        docLength: 20,
+        avgLength: 50,
+      );
       final long = bm25(
-        termFreq: 2, docFreq: 10, docCount: 100, docLength: 200, avgLength: 50);
+        termFreq: 2,
+        docFreq: 10,
+        docCount: 100,
+        docLength: 200,
+        avgLength: 50,
+      );
       expect(short, greaterThan(long));
     });
 
@@ -90,21 +129,20 @@ void main() {
 
     test('handles a single-document corpus without dividing by zero', () {
       final s = bm25(
-        termFreq: 1, docFreq: 1, docCount: 1, docLength: 5, avgLength: 5);
+        termFreq: 1,
+        docFreq: 1,
+        docCount: 1,
+        docLength: 5,
+        avgLength: 5,
+      );
       expect(s.isFinite, isTrue);
     });
   });
 
   group('score fusion', () {
     test('weights sum predictably', () {
-      expect(
-        fuse(vectorScore: 1.0, keywordScore: 0.0),
-        closeTo(0.6, 1e-9),
-      );
-      expect(
-        fuse(vectorScore: 0.0, keywordScore: 1.0),
-        closeTo(0.4, 1e-9),
-      );
+      expect(fuse(vectorScore: 1.0, keywordScore: 0.0), closeTo(0.6, 1e-9));
+      expect(fuse(vectorScore: 0.0, keywordScore: 1.0), closeTo(0.4, 1e-9));
     });
 
     test('a hit strong in both beats a hit strong in only one', () {
@@ -189,7 +227,9 @@ void main() {
     });
 
     test('handles a pool smaller than the limit', () {
-      final pool = [_Item('only', 0.5, [1.0, 0.0])];
+      final pool = [
+        _Item('only', 0.5, [1.0, 0.0]),
+      ];
       expect(mmr(pool, 10).length, 1);
     });
   });

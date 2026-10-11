@@ -63,20 +63,20 @@ class McpServerConfig {
   });
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'url': url,
-        'requiresAuth': requiresAuth,
-        'enabled': enabled,
-      };
+    'id': id,
+    'name': name,
+    'url': url,
+    'requiresAuth': requiresAuth,
+    'enabled': enabled,
+  };
 
   static McpServerConfig fromJson(Map<String, dynamic> j) => McpServerConfig(
-        id: j['id'] as String,
-        name: j['name'] as String? ?? j['id'] as String,
-        url: j['url'] as String,
-        requiresAuth: j['requiresAuth'] as bool? ?? false,
-        enabled: j['enabled'] as bool? ?? true,
-      );
+    id: j['id'] as String,
+    name: j['name'] as String? ?? j['id'] as String,
+    url: j['url'] as String,
+    requiresAuth: j['requiresAuth'] as bool? ?? false,
+    enabled: j['enabled'] as bool? ?? true,
+  );
 }
 
 class McpException implements Exception {
@@ -156,47 +156,54 @@ class McpService {
     McpServerConfig server, {
     String? authToken,
   }) async {
-    final init = await _rpc(
-      server,
-      'initialize',
-      {
-        'protocolVersion': '2025-06-18',
-        'capabilities': {
-          'tools': <String, dynamic>{},
-          'roots': {'listChanged': false},
-        },
-        'clientInfo': {'name': 'LocalMind', 'version': '1.1.0'},
+    final init = await _rpc(server, 'initialize', {
+      'protocolVersion': '2025-06-18',
+      'capabilities': {
+        'tools': <String, dynamic>{},
+        'roots': {'listChanged': false},
       },
-      authToken: authToken,
-    );
+      'clientInfo': {'name': 'LocalMind', 'version': '1.1.0'},
+    }, authToken: authToken);
 
     final sessionId = init['_sessionId'] as String?;
     if (sessionId != null) _sessions[server.id] = sessionId;
 
     // Best-effort: some servers require the notification to finish handshaking.
     try {
-      await _notify(server, 'notifications/initialized', const {},
-          authToken: authToken, sessionId: sessionId);
+      await _notify(
+        server,
+        'notifications/initialized',
+        const {},
+        authToken: authToken,
+        sessionId: sessionId,
+      );
     } catch (_) {
       // Optional.
     }
 
-    final listed = await _rpc(server, 'tools/list', const {},
-        authToken: authToken, sessionId: sessionId);
+    final listed = await _rpc(
+      server,
+      'tools/list',
+      const {},
+      authToken: authToken,
+      sessionId: sessionId,
+    );
 
     final raw = listed['tools'];
     final tools = <McpTool>[];
     if (raw is List) {
       for (final t in raw) {
         if (t is! Map) continue;
-        tools.add(McpTool(
-          name: '${t['name']}',
-          description: '${t['description'] ?? ''}',
-          serverId: server.id,
-          inputSchema: (t['inputSchema'] is Map)
-              ? Map<String, dynamic>.from(t['inputSchema'] as Map)
-              : const {'type': 'object', 'properties': {}},
-        ));
+        tools.add(
+          McpTool(
+            name: '${t['name']}',
+            description: '${t['description'] ?? ''}',
+            serverId: server.id,
+            inputSchema: (t['inputSchema'] is Map)
+                ? Map<String, dynamic>.from(t['inputSchema'] as Map)
+                : const {'type': 'object', 'properties': {}},
+          ),
+        );
       }
     }
 
@@ -219,9 +226,9 @@ class McpService {
     final toolName = qualifiedName.substring(idx + 1);
 
     final server = _servers.cast<McpServerConfig?>().firstWhere(
-          (s) => s?.id == serverId,
-          orElse: () => null,
-        );
+      (s) => s?.id == serverId,
+      orElse: () => null,
+    );
     if (server == null) {
       throw McpException('Unknown MCP server: $serverId');
     }
@@ -282,8 +289,12 @@ class McpService {
       'params': params,
     };
 
-    final response = await _post(server, body,
-        authToken: authToken, sessionId: sessionId);
+    final response = await _post(
+      server,
+      body,
+      authToken: authToken,
+      sessionId: sessionId,
+    );
 
     if (response.containsKey('error')) {
       final err = response['error'];
@@ -311,8 +322,13 @@ class McpService {
     String? sessionId,
   }) async {
     final body = {'jsonrpc': '2.0', 'method': method, 'params': params};
-    await _post(server, body,
-        authToken: authToken, sessionId: sessionId, expectId: false);
+    await _post(
+      server,
+      body,
+      authToken: authToken,
+      sessionId: sessionId,
+      expectId: false,
+    );
   }
 
   Future<Map<String, dynamic>> _post(
@@ -338,11 +354,7 @@ class McpService {
     late final http.Response res;
     try {
       res = await _client
-          .post(
-            Uri.parse(server.url),
-            headers: headers,
-            body: jsonEncode(body),
-          )
+          .post(Uri.parse(server.url), headers: headers, body: jsonEncode(body))
           .timeout(const Duration(seconds: 30));
     } on TimeoutException {
       throw McpException('${server.name}: timed out after 30s');
@@ -354,9 +366,7 @@ class McpService {
       final hint = res.statusCode == 401 || res.statusCode == 403
           ? ' (the server may need a token)'
           : '';
-      throw McpException(
-        '${server.name}: HTTP ${res.statusCode}$hint',
-      );
+      throw McpException('${server.name}: HTTP ${res.statusCode}$hint');
     }
 
     if (!expectId) return const {};

@@ -1,9 +1,11 @@
 /// Riverpod providers for state management
 import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
+
 import '../../data/services/llm_service.dart';
 import '../../data/services/embedding_service.dart';
 import '../../data/services/cloud_service.dart';
@@ -127,9 +129,9 @@ final textToSpeechProvider = StateNotifierProvider<TtsNotifier, bool>((ref) {
 class TtsNotifier extends StateNotifier<bool> {
   final FlutterTts _tts = FlutterTts();
   bool _isReady = false;
-  
+
   TtsNotifier() : super(false);
-  
+
   Future<void> init() async {
     await _tts.setLanguage('en-US');
     await _tts.setPitch(1.0);
@@ -137,35 +139,40 @@ class TtsNotifier extends StateNotifier<bool> {
     _isReady = true;
     state = true;
   }
-  
+
   Future<void> speak(String text) async {
     if (!_isReady) return;
     await _tts.speak(text);
   }
-  
+
   Future<void> stop() async {
     await _tts.stop();
   }
 }
 
 // Chat Messages Provider
-final chatMessagesProvider = StateNotifierProvider<ChatNotifier, List<ChatMessage>>((ref) {
-  return ChatNotifier(ref);
-});
+final chatMessagesProvider =
+    StateNotifierProvider<ChatNotifier, List<ChatMessage>>((ref) {
+      return ChatNotifier(ref);
+    });
 
 class ChatNotifier extends StateNotifier<List<ChatMessage>> {
   final Ref ref;
   final DatabaseHelper _db = DatabaseHelper.instance;
-  
+
   ChatNotifier(this.ref) : super([]) {
     _loadMessages();
   }
-  
+
   Future<void> _loadMessages() async {
     final messages = await _db.getRecentMessages(limit: 100);
-    state = messages.map((m) => ChatMessage.fromMap(m)).toList().reversed.toList();
+    state = messages
+        .map((m) => ChatMessage.fromMap(m))
+        .toList()
+        .reversed
+        .toList();
   }
-  
+
   Future<void> addMessage(ChatMessage message) async {
     await _db.insertMessage(
       id: message.id,
@@ -175,7 +182,7 @@ class ChatNotifier extends StateNotifier<List<ChatMessage>> {
     );
     state = [message, ...state];
   }
-  
+
   Future<void> clearChat() async {
     // In production, delete all messages from DB
     state = [];
@@ -183,9 +190,10 @@ class ChatNotifier extends StateNotifier<List<ChatMessage>> {
 }
 
 // Tool Permissions Provider
-final toolPermissionsProvider = StateNotifierProvider<PermissionsNotifier, Map<String, String>>((ref) {
-  return PermissionsNotifier();
-});
+final toolPermissionsProvider =
+    StateNotifierProvider<PermissionsNotifier, Map<String, String>>((ref) {
+      return PermissionsNotifier();
+    });
 
 /// Tool permissions, backed by the single [ToolPermissionStore].
 ///
@@ -218,30 +226,34 @@ class PermissionsNotifier extends StateNotifier<Map<String, String>> {
 }
 
 // Activity Log Provider
-final activityLogProvider = StateNotifierProvider<ActivityLogNotifier, List<Map<String, dynamic>>>((ref) {
-  return ActivityLogNotifier();
-});
+final activityLogProvider =
+    StateNotifierProvider<ActivityLogNotifier, List<Map<String, dynamic>>>((
+      ref,
+    ) {
+      return ActivityLogNotifier();
+    });
 
 class ActivityLogNotifier extends StateNotifier<List<Map<String, dynamic>>> {
   final DatabaseHelper _db = DatabaseHelper.instance;
-  
+
   ActivityLogNotifier() : super([]) {
     _loadLog();
   }
-  
+
   Future<void> _loadLog() async {
     state = await _db.getActivityLog(limit: 100);
   }
-  
+
   Future<void> refresh() async {
     await _loadLog();
   }
 }
 
 // Settings Provider
-final settingsProvider = StateNotifierProvider<SettingsNotifier, Map<String, dynamic>>((ref) {
-  return SettingsNotifier();
-});
+final settingsProvider =
+    StateNotifierProvider<SettingsNotifier, Map<String, dynamic>>((ref) {
+      return SettingsNotifier();
+    });
 
 /// The privacy facts a cloud consent step must state.
 ///
@@ -288,8 +300,7 @@ bool cloudConsentGranted(Map<String, dynamic> settings, String? providerId) {
 /// setting: it applies to exactly one outgoing turn and is consumed as that
 /// turn is sent, so a single tap can never leak more than one message. It never
 /// overrides private mode — see [routeConfigForTurn].
-final cloudOnceProvider =
-    StateNotifierProvider<CloudOnceNotifier, bool>((ref) {
+final cloudOnceProvider = StateNotifierProvider<CloudOnceNotifier, bool>((ref) {
   return CloudOnceNotifier();
 });
 
@@ -336,7 +347,6 @@ class TwoStepConfirm {
 }
 
 class SettingsNotifier extends StateNotifier<Map<String, dynamic>> {
-
   /// The conservative first-run defaults. Extracted so "Erase all data" can
   /// restore exactly this state without a second copy of the map drifting from
   /// the constructor's.
@@ -381,18 +391,18 @@ class SettingsNotifier extends StateNotifier<Map<String, dynamic>> {
   SettingsNotifier() : super(_defaults()) {
     _loadSettings();
   }
-  
+
   Future<void> _loadSettings() async {
     final contextSize = await _db.getPreference('context_size');
     if (contextSize != null) {
       state = Map.from(state)..['context_size'] = int.parse(contextSize);
     }
-    
+
     final personality = await _db.getPreference('personality');
     if (personality != null) {
       state = Map.from(state)..['personality'] = personality;
     }
-    
+
     final ttsEnabled = await _db.getPreference('tts_enabled');
     if (ttsEnabled != null) {
       state = Map.from(state)..['tts_enabled'] = ttsEnabled == 'true';
@@ -430,7 +440,8 @@ class SettingsNotifier extends StateNotifier<Map<String, dynamic>> {
     // Mirror private mode onto the router *before* any probe runs, so the
     // probe is correctly skipped when private mode is on (a DNS lookup is a
     // network call, and private mode promises none).
-    RouterService.instance.privateMode = state['private_mode'] as bool? ?? false;
+    RouterService.instance.privateMode =
+        state['private_mode'] as bool? ?? false;
 
     // Keep the router's view of connectivity fresh.
     await RouterService.instance.probeConnectivity();

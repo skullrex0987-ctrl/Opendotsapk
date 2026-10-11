@@ -30,8 +30,9 @@ import '../../core/utils/log.dart';
 class SecureScreen {
   SecureScreen._();
 
-  static const MethodChannel _channel =
-      MethodChannel('com.localmind.localmind/secure_screen');
+  static const MethodChannel _channel = MethodChannel(
+    'com.localmind.localmind/secure_screen',
+  );
 
   /// Block screenshots and the recents thumbnail.
   static Future<void> enable() async {
@@ -121,9 +122,7 @@ class _BiometricGateState extends State<BiometricGate>
 
   /// Ignore pause/resume for [window] so the next external activity does not
   /// re-arm the lock. Safe to call when no gate is mounted.
-  static void suppressReLock([
-    Duration window = const Duration(seconds: 3),
-  ]) {
+  static void suppressReLock([Duration window = const Duration(seconds: 3)]) {
     _globalSuppressUntil = DateTime.now().add(window);
   }
 
@@ -279,9 +278,7 @@ class _BiometricGateState extends State<BiometricGate>
     if (_unlocked) return widget.child;
 
     return Scaffold(
-      body: Center(
-        child: _blocked ? _buildNoCredential() : _buildLocked(),
-      ),
+      body: Center(child: _blocked ? _buildNoCredential() : _buildLocked()),
     );
   }
 
@@ -289,11 +286,7 @@ class _BiometricGateState extends State<BiometricGate>
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Icon(
-          Icons.lock_outline,
-          size: 56,
-          color: Colors.grey[500],
-        ),
+        Icon(Icons.lock_outline, size: 56, color: Colors.grey[500]),
         const SizedBox(height: 16),
         const Text(
           'LocalMind is locked',
@@ -330,11 +323,7 @@ class _BiometricGateState extends State<BiometricGate>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.lock_outline,
-            size: 56,
-            color: Colors.grey[500],
-          ),
+          Icon(Icons.lock_outline, size: 56, color: Colors.grey[500]),
           const SizedBox(height: 16),
           const Text(
             'LocalMind can’t lock',

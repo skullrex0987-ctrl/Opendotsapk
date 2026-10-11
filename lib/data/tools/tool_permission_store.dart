@@ -44,7 +44,9 @@ class ToolPermissionStore {
       final prefs = await SharedPreferences.getInstance();
       for (final name in toolNames) {
         final raw = prefs.getString('$_prefix$name');
-        _cache[name] = raw == null ? defaultFor(name) : ToolPermission.parse(raw);
+        _cache[name] = raw == null
+            ? defaultFor(name)
+            : ToolPermission.parse(raw);
       }
     } catch (_) {
       // A read failure must not leave a tool unrestricted. Falling back to the

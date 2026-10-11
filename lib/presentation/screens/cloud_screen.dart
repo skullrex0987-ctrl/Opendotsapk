@@ -126,8 +126,10 @@ class _CloudModelsScreenState extends ConsumerState<CloudModelsScreen> {
           const SizedBox(height: 16),
           _routingCard(settings),
           const SizedBox(height: 16),
-          const Text('Providers',
-              style: TextStyle(fontWeight: FontWeight.bold)),
+          const Text(
+            'Providers',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
           const SizedBox(height: 8),
           for (final p in CloudCatalog.providers)
             _providerTile(p, activeProvider == p.id),
@@ -150,8 +152,10 @@ class _CloudModelsScreenState extends ConsumerState<CloudModelsScreen> {
               children: [
                 Icon(Icons.lock_outline, size: 18, color: Colors.green[400]),
                 const SizedBox(width: 8),
-                const Text('How this works',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text(
+                  'How this works',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -179,8 +183,10 @@ class _CloudModelsScreenState extends ConsumerState<CloudModelsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Routing',
-                style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text(
+              'Routing',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 10),
             SegmentedButton<String>(
               segments: const [
@@ -251,13 +257,14 @@ class _CloudModelsScreenState extends ConsumerState<CloudModelsScreen> {
                 if (isActive)
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 2),
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.green.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Text('active',
-                        style: TextStyle(fontSize: 10)),
+                    child: const Text('active', style: TextStyle(fontSize: 10)),
                   ),
               ],
             ),
@@ -265,8 +272,8 @@ class _CloudModelsScreenState extends ConsumerState<CloudModelsScreen> {
               hasKey
                   ? 'Key saved · ${provider.models.length} model(s)'
                   : keyOptional
-                      ? 'No key needed · ${provider.models.length} model(s)'
-                      : 'No key yet',
+                  ? 'No key needed · ${provider.models.length} model(s)'
+                  : 'No key yet',
               style: const TextStyle(fontSize: 11),
             ),
             trailing: const Icon(Icons.chevron_right),
@@ -289,8 +296,10 @@ class _CloudModelsScreenState extends ConsumerState<CloudModelsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('This session',
-                style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text(
+              'This session',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 8),
             Text('Prompt tokens: ${cloud.sessionPromptTokens}'),
             Text('Completion tokens: ${cloud.sessionCompletionTokens}'),
@@ -458,8 +467,10 @@ class _CloudProviderScreenState extends ConsumerState<CloudProviderScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Base URL',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    const Text(
+                      'Base URL',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
                     const SizedBox(height: 8),
                     TextField(
                       controller: _baseUrlController,
@@ -477,8 +488,11 @@ class _CloudProviderScreenState extends ConsumerState<CloudProviderScreen> {
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(Icons.warning_amber_rounded,
-                              size: 16, color: Colors.amber[400]),
+                          Icon(
+                            Icons.warning_amber_rounded,
+                            size: 16,
+                            color: Colors.amber[400],
+                          ),
                           const SizedBox(width: 6),
                           const Expanded(
                             child: Text(
@@ -500,8 +514,7 @@ class _CloudProviderScreenState extends ConsumerState<CloudProviderScreen> {
                     Align(
                       alignment: Alignment.centerRight,
                       child: TextButton(
-                        onPressed:
-                            baseUrlError == null ? _saveBaseUrl : null,
+                        onPressed: baseUrlError == null ? _saveBaseUrl : null,
                         child: const Text('Save URL'),
                       ),
                     ),
@@ -612,9 +625,8 @@ class _CloudProviderScreenState extends ConsumerState<CloudProviderScreen> {
     // invalid, but never persist a URL that failed validation.
     final error = baseUrlValidationError(url);
     if (error != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error)),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error)));
       return;
     }
     final cfg = Map<String, String>.from(
@@ -623,9 +635,8 @@ class _CloudProviderScreenState extends ConsumerState<CloudProviderScreen> {
     cfg['baseUrl'] = url;
     await SecureStore.instance.setProviderConfig(widget.provider.id, cfg);
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Base URL saved.')),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('Base URL saved.')));
     _refreshRouter();
   }
 
@@ -650,9 +661,11 @@ class _CloudProviderScreenState extends ConsumerState<CloudProviderScreen> {
         modelId: widget.provider.defaultModel.id,
       );
       if (!mounted) return;
-      setState(() => _status = reply.isEmpty
-          ? 'The provider replied but sent no text. The key works, though.'
-          : 'OK — the model replied: "$reply"');
+      setState(
+        () => _status = reply.isEmpty
+            ? 'The provider replied but sent no text. The key works, though.'
+            : 'OK — the model replied: "$reply"',
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() => _status = '$e');
@@ -669,8 +682,10 @@ class _CloudProviderScreenState extends ConsumerState<CloudProviderScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('${widget.provider.displayName} ${model.displayName} '
-            'is now the cloud model.'),
+        content: Text(
+          '${widget.provider.displayName} ${model.displayName} '
+          'is now the cloud model.',
+        ),
       ),
     );
   }

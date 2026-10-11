@@ -21,9 +21,10 @@ void main() {
   ({CloudProvider provider, String modelId}) openAi() =>
       (provider: CloudCatalog.byId('openai')!, modelId: 'gpt-4o-mini');
 
-  ({CloudProvider provider, String modelId}) anthropic() =>
-      (provider: CloudCatalog.byId('anthropic')!,
-          modelId: 'claude-3-5-haiku-latest');
+  ({CloudProvider provider, String modelId}) anthropic() => (
+    provider: CloudCatalog.byId('anthropic')!,
+    modelId: 'claude-3-5-haiku-latest',
+  );
 
   const auto = RoutingConfig(mode: 'auto');
 
@@ -77,24 +78,27 @@ void main() {
       expect(d.provider?.id, 'openai');
     });
 
-    test('image with no vision anywhere is refused, never quietly downgraded', () {
-      // Neither a text-only provider nor a text-only local model can see the
-      // picture. Asking either one returns a confident answer to a question
-      // that was never actually asked, so the turn must be refused instead.
-      router.setCandidates([
-        (provider: CloudCatalog.byId('deepseek')!, modelId: 'deepseek-chat'),
-      ]);
-      final d = router.decide(
-        prompt: 'what is this',
-        config: auto,
-        hasImages: true,
-        localVisionReady: false,
-        localModelReady: true,
-      );
-      expect(d.isCloud, isFalse);
-      expect(d.isRefused, isTrue);
-      expect(d.reason.toLowerCase(), contains('no vision model'));
-    });
+    test(
+      'image with no vision anywhere is refused, never quietly downgraded',
+      () {
+        // Neither a text-only provider nor a text-only local model can see the
+        // picture. Asking either one returns a confident answer to a question
+        // that was never actually asked, so the turn must be refused instead.
+        router.setCandidates([
+          (provider: CloudCatalog.byId('deepseek')!, modelId: 'deepseek-chat'),
+        ]);
+        final d = router.decide(
+          prompt: 'what is this',
+          config: auto,
+          hasImages: true,
+          localVisionReady: false,
+          localModelReady: true,
+        );
+        expect(d.isCloud, isFalse);
+        expect(d.isRefused, isTrue);
+        expect(d.reason.toLowerCase(), contains('no vision model'));
+      },
+    );
 
     test('a refused image turn never falls back to the local text model', () {
       // Regression guard: this used to return RouteTarget.local with a reason
@@ -112,20 +116,23 @@ void main() {
       expect(d.isRefused, isTrue);
     });
 
-    test('private mode refuses an unservable image rather than reaching out', () {
-      // Private mode is absolute. It must never solve a vision gap by going
-      // online, so refusing is the only honest outcome.
-      router.setCandidates([openAi()]);
-      final d = router.decide(
-        prompt: 'what is this',
-        config: const RoutingConfig(mode: 'auto', privateMode: true),
-        hasImages: true,
-        localVisionReady: false,
-        localModelReady: true,
-      );
-      expect(d.isCloud, isFalse);
-      expect(d.isRefused, isTrue);
-    });
+    test(
+      'private mode refuses an unservable image rather than reaching out',
+      () {
+        // Private mode is absolute. It must never solve a vision gap by going
+        // online, so refusing is the only honest outcome.
+        router.setCandidates([openAi()]);
+        final d = router.decide(
+          prompt: 'what is this',
+          config: const RoutingConfig(mode: 'auto', privateMode: true),
+          hasImages: true,
+          localVisionReady: false,
+          localModelReady: true,
+        );
+        expect(d.isCloud, isFalse);
+        expect(d.isRefused, isTrue);
+      },
+    );
 
     test('offline refuses an unservable image rather than reaching out', () {
       router.setCandidates([openAi()]);
@@ -267,10 +274,7 @@ void main() {
       router.isMetered = true;
       final d = router.decide(
         prompt: 'x' * 2000,
-        config: const RoutingConfig(
-          mode: 'auto',
-          preferLocalOnMetered: false,
-        ),
+        config: const RoutingConfig(mode: 'auto', preferLocalOnMetered: false),
         localModelReady: true,
       );
       expect(d.isCloud, isTrue);
@@ -279,11 +283,7 @@ void main() {
     test('every decision carries a human-readable reason', () {
       router.setCandidates([openAi()]);
       for (final p in ['hi', 'x' * 2000, 'debug this', 'my password is x']) {
-        final d = router.decide(
-          prompt: p,
-          config: auto,
-          localModelReady: true,
-        );
+        final d = router.decide(prompt: p, config: auto, localModelReady: true);
         expect(d.reason, isNotEmpty);
       }
     });
@@ -327,8 +327,11 @@ void main() {
     test('base urls are https except local servers', () {
       for (final p in CloudCatalog.providers) {
         if (p.id == 'ollama' || p.id == 'custom') continue;
-        expect(p.defaultBaseUrl.startsWith('https://'), isTrue,
-            reason: '${p.id} must not use plaintext http');
+        expect(
+          p.defaultBaseUrl.startsWith('https://'),
+          isTrue,
+          reason: '${p.id} must not use plaintext http',
+        );
       }
     });
 

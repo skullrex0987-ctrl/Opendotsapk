@@ -21,6 +21,7 @@ class EmbeddingService {
   OrtSession? _session;
   bool _isLoaded = false;
   int _dim = 384;
+
   /// Token limit of all-MiniLM-L6-v2.
   ///
   /// Chunking is sized against this — see `TextUtils.embedChunkChars`. Anything
@@ -116,7 +117,8 @@ class EmbeddingService {
 
     try {
       final outputs = await session.runAsync(runOptions, inputs);
-      if (outputs == null || outputs.isEmpty) return List<double>.filled(_dim, 0.0);
+      if (outputs == null || outputs.isEmpty)
+        return List<double>.filled(_dim, 0.0);
 
       // This model exports `last_hidden_state` as [batch, seq, 384] — token
       // level, not pooled — so the mean-pool path is the normal one. The

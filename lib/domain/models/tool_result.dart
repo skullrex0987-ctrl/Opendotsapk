@@ -33,13 +33,13 @@ enum ToolStatus {
 extension ToolStatusWire on ToolStatus {
   /// The string the model sees. Kept stable and explicit.
   String get wire => switch (this) {
-        ToolStatus.success => 'success',
-        ToolStatus.failed => 'failed',
-        ToolStatus.unsupported => 'unsupported',
-        ToolStatus.requiresPermission => 'requires_permission',
-        ToolStatus.awaitingConfirmation => 'awaiting_confirmation',
-        ToolStatus.requiresUserAction => 'requires_user_action',
-      };
+    ToolStatus.success => 'success',
+    ToolStatus.failed => 'failed',
+    ToolStatus.unsupported => 'unsupported',
+    ToolStatus.requiresPermission => 'requires_permission',
+    ToolStatus.awaitingConfirmation => 'awaiting_confirmation',
+    ToolStatus.requiresUserAction => 'requires_user_action',
+  };
 }
 
 class ToolResult {
@@ -69,9 +69,10 @@ class ToolResult {
   factory ToolResult.awaitingConfirmation(String message) =>
       ToolResult._(ToolStatus.awaitingConfirmation, message);
 
-  factory ToolResult.requiresUserAction(String message,
-          {Map<String, dynamic>? data}) =>
-      ToolResult._(ToolStatus.requiresUserAction, message, data: data);
+  factory ToolResult.requiresUserAction(
+    String message, {
+    Map<String, dynamic>? data,
+  }) => ToolResult._(ToolStatus.requiresUserAction, message, data: data);
 
   bool get isSuccess => status == ToolStatus.success;
 
@@ -79,10 +80,10 @@ class ToolResult {
   bool get isCompletedAction => status == ToolStatus.success;
 
   Map<String, dynamic> toMap() => {
-        'status': status.wire,
-        'message': message,
-        if (data != null) ...data!,
-      };
+    'status': status.wire,
+    'message': message,
+    if (data != null) ...data!,
+  };
 
   String toJson() => jsonEncode(toMap());
 

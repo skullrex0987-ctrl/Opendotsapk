@@ -52,8 +52,10 @@ void main() {
 
   group('cosine', () {
     test('identical vectors score 1', () {
-      expect(TextUtils.cosine([1.0, 2.0, 3.0], [1.0, 2.0, 3.0]),
-          closeTo(1.0, 1e-9));
+      expect(
+        TextUtils.cosine([1.0, 2.0, 3.0], [1.0, 2.0, 3.0]),
+        closeTo(1.0, 1e-9),
+      );
     });
 
     test('orthogonal vectors score 0', () {
@@ -77,8 +79,7 @@ void main() {
     });
 
     test('handles mismatched lengths using the shorter', () {
-      expect(TextUtils.cosine([1.0, 0.0], [1.0, 0.0, 9.0]),
-          closeTo(1.0, 1e-9));
+      expect(TextUtils.cosine([1.0, 0.0], [1.0, 0.0, 9.0]), closeTo(1.0, 1e-9));
     });
   });
 
@@ -99,8 +100,10 @@ void main() {
     });
 
     test('every chunk stays within the target plus overlap tolerance', () {
-      final text = List.generate(40, (i) => 'Sentence number $i is here. ')
-          .join();
+      final text = List.generate(
+        40,
+        (i) => 'Sentence number $i is here. ',
+      ).join();
       final chunks = TextUtils.chunk(text, targetChars: 300, overlapChars: 50);
       for (final c in chunks) {
         expect(c.length, lessThanOrEqualTo(320));
@@ -112,8 +115,7 @@ void main() {
         60,
         (i) => 'Paragraph $i contains distinctive token$i. ',
       ).join();
-      final chunks =
-          TextUtils.chunk(text, targetChars: 400, overlapChars: 100);
+      final chunks = TextUtils.chunk(text, targetChars: 400, overlapChars: 100);
       expect(chunks.length, greaterThan(1));
 
       // The tail of chunk N should reappear at the head of chunk N+1.

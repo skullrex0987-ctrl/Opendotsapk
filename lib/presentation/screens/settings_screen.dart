@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../providers/providers.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/utils/log.dart';
@@ -23,11 +24,9 @@ class SettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
     final permissions = ref.watch(toolPermissionsProvider);
-    
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Settings'),
-      ),
+      appBar: AppBar(title: const Text('Settings')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -40,25 +39,25 @@ class SettingsScreen extends ConsumerWidget {
           // Tool Permissions
           const SectionTitle(title: 'Tool Permissions'),
           PermissionList(permissions: permissions),
-          
+
           const Divider(),
-          
+
           // Personality
           const SectionTitle(title: 'Personality'),
           PersonalitySelector(current: settings['personality'] as String?),
-          
+
           const Divider(),
-          
+
           // Voice Settings
           const SectionTitle(title: 'Voice'),
           VoiceSettings(),
-          
+
           const Divider(),
-          
+
           // Context Size
           const SectionTitle(title: 'Context'),
           ContextSizeSelector(current: settings['context_size'] as int?),
-          
+
           const Divider(),
 
           // Cloud privacy — the one-time opt-in, and where to withdraw it.
@@ -72,7 +71,7 @@ class SettingsScreen extends ConsumerWidget {
           const EraseDataSection(),
 
           const Divider(),
-          
+
           // About
           const SectionTitle(title: 'About'),
           const AboutSection(),
@@ -84,7 +83,7 @@ class SettingsScreen extends ConsumerWidget {
 
 class SectionTitle extends StatelessWidget {
   final String title;
-  
+
   const SectionTitle({super.key, required this.title});
 
   @override
@@ -122,9 +121,9 @@ class ModelsTile extends ConsumerWidget {
       trailing: llmService.isLoaded
           ? const Icon(Icons.check_circle, color: Colors.green)
           : const Icon(Icons.warning, color: Colors.orange),
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const ModelsScreen()),
-      ),
+      onTap: () =>
+          Navigator.of(context)
+              .push(MaterialPageRoute(builder: (_) => const ModelsScreen())),
     );
   }
 }
@@ -132,7 +131,7 @@ class ModelsTile extends ConsumerWidget {
 /// Permission list widget
 class PermissionList extends ConsumerWidget {
   final Map<String, String> permissions;
-  
+
   const PermissionList({super.key, required this.permissions});
 
   @override
@@ -147,7 +146,9 @@ class PermissionList extends ConsumerWidget {
           trailing: PopupMenuButton<String>(
             initialValue: current,
             onSelected: (value) {
-              ref.read(toolPermissionsProvider.notifier).setPermission(tool, value);
+              ref
+                  .read(toolPermissionsProvider.notifier)
+                  .setPermission(tool, value);
             },
             itemBuilder: (context) => [
               const PopupMenuItem(value: 'allow', child: Text('Allow')),
@@ -159,35 +160,55 @@ class PermissionList extends ConsumerWidget {
       }).toList(),
     );
   }
-  
+
   Widget _getToolIcon(String tool) {
     // `ListTile.leading` takes a Widget, not an IconData.
     switch (tool) {
-      case 'send_sms': return const Icon(Icons.sms);
-      case 'create_calendar_event': return const Icon(Icons.event);
-      case 'add_contact': return const Icon(Icons.person_add);
-      case 'set_alarm': return const Icon(Icons.alarm);
-      case 'open_app': return const Icon(Icons.apps);
-      case 'web_search': return const Icon(Icons.search);
-      case 'get_location': return const Icon(Icons.location_on);
-      case 'create_note': return const Icon(Icons.note);
-      case 'read_notes': return const Icon(Icons.library_books);
-      default: return const Icon(Icons.handyman);
+      case 'send_sms':
+        return const Icon(Icons.sms);
+      case 'create_calendar_event':
+        return const Icon(Icons.event);
+      case 'add_contact':
+        return const Icon(Icons.person_add);
+      case 'set_alarm':
+        return const Icon(Icons.alarm);
+      case 'open_app':
+        return const Icon(Icons.apps);
+      case 'web_search':
+        return const Icon(Icons.search);
+      case 'get_location':
+        return const Icon(Icons.location_on);
+      case 'create_note':
+        return const Icon(Icons.note);
+      case 'read_notes':
+        return const Icon(Icons.library_books);
+      default:
+        return const Icon(Icons.handyman);
     }
   }
-  
+
   String _getToolName(String tool) {
     switch (tool) {
-      case 'send_sms': return 'Send SMS';
-      case 'create_calendar_event': return 'Calendar Event';
-      case 'add_contact': return 'Add Contact';
-      case 'set_alarm': return 'Set Alarm';
-      case 'open_app': return 'Open App';
-      case 'web_search': return 'Web Search';
-      case 'get_location': return 'Get Location';
-      case 'create_note': return 'Create Note';
-      case 'read_notes': return 'Read Notes';
-      default: return tool;
+      case 'send_sms':
+        return 'Send SMS';
+      case 'create_calendar_event':
+        return 'Calendar Event';
+      case 'add_contact':
+        return 'Add Contact';
+      case 'set_alarm':
+        return 'Set Alarm';
+      case 'open_app':
+        return 'Open App';
+      case 'web_search':
+        return 'Web Search';
+      case 'get_location':
+        return 'Get Location';
+      case 'create_note':
+        return 'Create Note';
+      case 'read_notes':
+        return 'Read Notes';
+      default:
+        return tool;
     }
   }
 }
@@ -195,7 +216,7 @@ class PermissionList extends ConsumerWidget {
 /// Personality selector widget
 class PersonalitySelector extends ConsumerWidget {
   final String? current;
-  
+
   const PersonalitySelector({super.key, this.current});
 
   @override
@@ -208,7 +229,9 @@ class PersonalitySelector extends ConsumerWidget {
           groupValue: current,
           onChanged: (value) {
             if (value != null) {
-              ref.read(settingsProvider.notifier).updateSetting('personality', value);
+              ref
+                  .read(settingsProvider.notifier)
+                  .updateSetting('personality', value);
             }
           },
         );
@@ -225,7 +248,7 @@ class VoiceSettings extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
     final ttsEnabled = settings['tts_enabled'] as bool? ?? true;
-    
+
     return SwitchListTile(
       title: const Text('Text-to-Speech'),
       subtitle: const Text('Read responses aloud'),
@@ -240,7 +263,7 @@ class VoiceSettings extends ConsumerWidget {
 /// Context size selector widget
 class ContextSizeSelector extends ConsumerWidget {
   final int? current;
-  
+
   const ContextSizeSelector({super.key, this.current});
 
   @override
@@ -253,7 +276,9 @@ class ContextSizeSelector extends ConsumerWidget {
           groupValue: current,
           onChanged: (value) {
             if (value != null) {
-              ref.read(settingsProvider.notifier).updateSetting('context_size', value);
+              ref
+                  .read(settingsProvider.notifier)
+                  .updateSetting('context_size', value);
             }
           },
         );
@@ -278,11 +303,9 @@ class AboutSection extends StatelessWidget {
             style: TextStyle(fontSize: 11),
           ),
           trailing: const Icon(Icons.chevron_right),
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => const PerformanceScreen(),
-            ),
-          ),
+          onTap: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const PerformanceScreen())),
         ),
         ListTile(
           leading: const Icon(Icons.cloud_queue),
@@ -292,11 +315,9 @@ class AboutSection extends StatelessWidget {
             style: TextStyle(fontSize: 11),
           ),
           trailing: const Icon(Icons.chevron_right),
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => const CloudModelsScreen(),
-            ),
-          ),
+          onTap: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const CloudModelsScreen())),
         ),
         const Divider(),
         ListTile(
@@ -346,8 +367,10 @@ class CloudPrivacySection extends ConsumerWidget {
               children: [
                 Icon(granted ? Icons.cloud_done : Icons.cloud_off, size: 18),
                 const SizedBox(width: 8),
-                const Text('Cloud use',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text(
+                  'Cloud use',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -364,7 +387,7 @@ class CloudPrivacySection extends ConsumerWidget {
                 granted
                     ? 'Cloud is enabled for ${provider.displayName}.'
                     : 'Cloud is off for ${provider.displayName}. Nothing is '
-                        'sent until you confirm.',
+                          'sent until you confirm.',
                 style: const TextStyle(fontSize: 12, height: 1.4),
               ),
               const SizedBox(height: 10),
@@ -376,9 +399,7 @@ class CloudPrivacySection extends ConsumerWidget {
               else
                 OutlinedButton(
                   onPressed: () {
-                    ref
-                        .read(settingsProvider.notifier)
-                        .revokeCloudConsent();
+                    ref.read(settingsProvider.notifier).revokeCloudConsent();
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Cloud consent withdrawn.')),
                     );
@@ -525,8 +546,10 @@ class _EraseDataSectionState extends ConsumerState<EraseDataSection> {
                 controlAffinity: ListTileControlAffinity.leading,
                 value: deleteModels,
                 onChanged: (v) => setLocal(() => deleteModels = v ?? false),
-                title: const Text('Also delete downloaded models',
-                    style: TextStyle(fontSize: 13)),
+                title: const Text(
+                  'Also delete downloaded models',
+                  style: TextStyle(fontSize: 13),
+                ),
                 subtitle: Text(
                   'Frees disk space. Files under '
                   '"${AppConstants.modelsDirName}/" in this app\'s documents '
@@ -579,8 +602,9 @@ class _EraseDataSectionState extends ConsumerState<EraseDataSection> {
       if (deleteModels) {
         try {
           final docs = await getApplicationDocumentsDirectory();
-          final models =
-              Directory('${docs.path}/${AppConstants.modelsDirName}');
+          final models = Directory(
+            '${docs.path}/${AppConstants.modelsDirName}',
+          );
           if (await models.exists()) {
             await models.delete(recursive: true);
           }
@@ -604,9 +628,8 @@ class _EraseDataSectionState extends ConsumerState<EraseDataSection> {
     } catch (e) {
       Log.e('erase all data failed: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erase failed: $e')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Erase failed: $e')));
     } finally {
       if (mounted) setState(() => _busy = false);
     }

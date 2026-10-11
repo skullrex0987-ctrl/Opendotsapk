@@ -81,20 +81,20 @@ class GpuCapability {
   bool get npuUsable => false;
 
   String get gpuLabel => switch (gpuClass) {
-        GpuClass.vulkanCapable => 'Vulkan-capable GPU',
-        GpuClass.unlikely => 'No usable GPU detected',
-        GpuClass.unknown => 'GPU capability unknown',
-      };
+    GpuClass.vulkanCapable => 'Vulkan-capable GPU',
+    GpuClass.unlikely => 'No usable GPU detected',
+    GpuClass.unknown => 'GPU capability unknown',
+  };
 
   String get npuLabel => switch (npuVendor) {
-        NpuVendor.qualcomm => 'Qualcomm Hexagon NPU present',
-        NpuVendor.mediatek => 'MediaTek APU present',
-        NpuVendor.samsung => 'Samsung ENN NPU present',
-        NpuVendor.google => 'Google Tensor TPU present',
-        NpuVendor.huawei => 'Huawei Da Vinci NPU present',
-        NpuVendor.none => 'No NPU detected',
-        NpuVendor.unknown => 'NPU capability unknown',
-      };
+    NpuVendor.qualcomm => 'Qualcomm Hexagon NPU present',
+    NpuVendor.mediatek => 'MediaTek APU present',
+    NpuVendor.samsung => 'Samsung ENN NPU present',
+    NpuVendor.google => 'Google Tensor TPU present',
+    NpuVendor.huawei => 'Huawei Da Vinci NPU present',
+    NpuVendor.none => 'No NPU detected',
+    NpuVendor.unknown => 'NPU capability unknown',
+  };
 
   static const unknown = GpuCapability(
     socModel: 'unknown',
@@ -153,7 +153,8 @@ class GpuService {
           npuVendor: npuVendor,
           totalRamMb: ramMb,
           recommendedGpuLayers: 0,
-          summary: 'Android reports this as a low-RAM device, so inference '
+          summary:
+              'Android reports this as a low-RAM device, so inference '
               'stays on the CPU and a small model is recommended.',
         );
         return _cached!;
@@ -163,7 +164,8 @@ class GpuService {
       // generation loses to the CPU: generation is memory-bandwidth-bound, and
       // a mobile GPU with a narrow bus does not beat well-vectorised NEON
       // kernels. Do not silently pick the slower path for these users.
-      final maliCautious = combined.contains('mali') &&
+      final maliCautious =
+          combined.contains('mali') &&
           !combined.contains('immortalis') &&
           !combined.contains('g715') &&
           !combined.contains('g720');
@@ -180,9 +182,9 @@ class GpuService {
         gpuOftenSlower: maliCautious,
         summary: maliCautious
             ? 'A midrange Mali GPU was detected. On these, token generation is '
-                'memory-bandwidth-bound and the CPU kernels are usually faster, '
-                'so the CPU is used by default. You can try the GPU in '
-                'Performance and compare.'
+                  'memory-bandwidth-bound and the CPU kernels are usually faster, '
+                  'so the CPU is used by default. You can try the GPU in '
+                  'Performance and compare.'
             : _summaryFor(gpuClass, layers, ramMb),
       );
     } catch (e) {
@@ -251,11 +253,15 @@ class GpuService {
         s.contains('qcom')) {
       return NpuVendor.qualcomm;
     }
-    if (s.contains('mediatek') || s.contains('dimensity') || s.contains('mt6') ||
+    if (s.contains('mediatek') ||
+        s.contains('dimensity') ||
+        s.contains('mt6') ||
         s.contains('mt8')) {
       return NpuVendor.mediatek;
     }
-    if (s.contains('exynos') || s.contains('samsung') || s.contains('xclipse')) {
+    if (s.contains('exynos') ||
+        s.contains('samsung') ||
+        s.contains('xclipse')) {
       return NpuVendor.samsung;
     }
     if (s.contains('tensor') || s.contains('google')) return NpuVendor.google;
@@ -281,17 +287,18 @@ class GpuService {
     switch (cls) {
       case GpuClass.unlikely:
         return 'Running entirely on the CPU. This is an emulator or a device '
-            'without a usable GPU driver$ram.'.trim();
+                'without a usable GPU driver$ram.'
+            .trim();
       case GpuClass.vulkanCapable:
         return layers > 0
             ? 'GPU acceleration enabled — offloading all layers to the GPU'
-                '${ram.isEmpty ? '' : ' ($ram)'}.'
+                  '${ram.isEmpty ? '' : ' ($ram)'}.'
             : 'A GPU is present, but $ram is not enough to offload safely, so '
-                'the CPU is being used.';
+                  'the CPU is being used.';
       case GpuClass.unknown:
         return layers > 0
             ? 'The GPU was not identified, but acceleration is being attempted '
-                'and will fall back to the CPU if the driver refuses.'
+                  'and will fall back to the CPU if the driver refuses.'
             : 'The GPU was not identified; running on the CPU.';
     }
   }

@@ -171,7 +171,10 @@ ModelIntegrity? integrityFor(LocalModel m) => modelIntegrityManifest[m.id];
 String pinToCommit(String url, String commitSha) {
   if (!_commitShaPattern.hasMatch(commitSha)) {
     throw ArgumentError.value(
-        commitSha, 'commitSha', 'must be a 40-char lowercase hex commit');
+      commitSha,
+      'commitSha',
+      'must be a 40-char lowercase hex commit',
+    );
   }
   const marker = '/resolve/main/';
   if (url.contains(marker)) {
@@ -240,17 +243,23 @@ DownloadVerification verifyDownload({
 }) {
   if (receivedBytes <= 0) {
     return const DownloadVerification(
-        DownloadVerdict.empty, 'no bytes were received');
+      DownloadVerdict.empty,
+      'no bytes were received',
+    );
   }
   if (expectedSize <= 0) {
     return const DownloadVerification(
-        DownloadVerdict.badExpectedSize, 'provider has no expected size');
+      DownloadVerdict.badExpectedSize,
+      'provider has no expected size',
+    );
   }
   final expected = expectedSha256?.toLowerCase();
   if (expected == null || !_sha256Pattern.hasMatch(expected)) {
     // Fail closed: without a pinned hash a "successful" download proves nothing.
     return const DownloadVerification(
-        DownloadVerdict.missingChecksum, 'provider has no usable SHA-256');
+      DownloadVerdict.missingChecksum,
+      'provider has no usable SHA-256',
+    );
   }
   // A server that promised N bytes and delivered fewer truncated the body.
   if (contentLength != null &&
@@ -262,21 +271,29 @@ DownloadVerification verifyDownload({
     );
   }
   if (receivedBytes < expectedSize) {
-    return DownloadVerification(DownloadVerdict.truncated,
-        'received $receivedBytes of $expectedSize bytes');
+    return DownloadVerification(
+      DownloadVerdict.truncated,
+      'received $receivedBytes of $expectedSize bytes',
+    );
   }
   if (receivedBytes > expectedSize) {
-    return DownloadVerification(DownloadVerdict.oversized,
-        'received $receivedBytes, more than the expected $expectedSize bytes');
+    return DownloadVerification(
+      DownloadVerdict.oversized,
+      'received $receivedBytes, more than the expected $expectedSize bytes',
+    );
   }
   final actual = actualSha256?.toLowerCase();
   if (actual == null) {
     return const DownloadVerification(
-        DownloadVerdict.checksumMismatch, 'checksum could not be computed');
+      DownloadVerdict.checksumMismatch,
+      'checksum could not be computed',
+    );
   }
   if (actual != expected) {
-    return DownloadVerification(DownloadVerdict.checksumMismatch,
-        'SHA-256 mismatch (expected $expected, got $actual)');
+    return DownloadVerification(
+      DownloadVerdict.checksumMismatch,
+      'SHA-256 mismatch (expected $expected, got $actual)',
+    );
   }
   return const DownloadVerification(DownloadVerdict.ok, 'ok');
 }
@@ -337,12 +354,18 @@ ResumePlan planResume({
 }) {
   if (existingBytes <= 0) {
     return const ResumePlan(
-        startByte: 0, restart: true, reason: 'no partial file');
+      startByte: 0,
+      restart: true,
+      reason: 'no partial file',
+    );
   }
   if (expectedSize > 0 && existingBytes >= expectedSize) {
     // Nothing left to fetch, and the bytes still have to pass verification.
     return const ResumePlan(
-        startByte: 0, restart: true, reason: 'partial already covers the file');
+      startByte: 0,
+      restart: true,
+      reason: 'partial already covers the file',
+    );
   }
   if (storedExpectedSize != null &&
       expectedSize > 0 &&
@@ -350,13 +373,17 @@ ResumePlan planResume({
     // The pinned size changed since the partial was written (a new manifest):
     // the partial belongs to a different file, so start over.
     return const ResumePlan(
-        startByte: 0, restart: true, reason: 'partial was for a different size');
+      startByte: 0,
+      restart: true,
+      reason: 'partial was for a different size',
+    );
   }
   if (acceptRangesBytes == false) {
     return const ResumePlan(
-        startByte: 0,
-        restart: true,
-        reason: 'server does not advertise Accept-Ranges: bytes');
+      startByte: 0,
+      restart: true,
+      reason: 'server does not advertise Accept-Ranges: bytes',
+    );
   }
   final validator = resumeValidator(
     etag: storedEtag,
@@ -366,7 +393,10 @@ ResumePlan planResume({
     // Without a validator we cannot detect that the remote changed, so an
     // append could stitch two revisions into one corrupt file.
     return const ResumePlan(
-        startByte: 0, restart: true, reason: 'no stored validator');
+      startByte: 0,
+      restart: true,
+      reason: 'no stored validator',
+    );
   }
   return ResumePlan(
     startByte: existingBytes,
@@ -490,6 +520,9 @@ class DownloadProgress {
 class _PartMeta {
   final String? etag;
   final String? lastModified;
+
+  /// Null means the server never advertised Accept-Ranges (e.g. a 206 response
+  /// that omits it), so we don't know — treat as "maybe" rather than "no".
   final bool? acceptRanges;
   final int expectedSize;
 
@@ -501,11 +534,11 @@ class _PartMeta {
   });
 
   Map<String, dynamic> toJson() => {
-        'etag': etag,
-        'last_modified': lastModified,
-        'accept_ranges': acceptRanges,
-        'expected_size': expectedSize,
-      };
+    'etag': etag,
+    'last_modified': lastModified,
+    'accept_ranges': acceptRanges,
+    'expected_size': expectedSize,
+  };
 
   static _PartMeta? fromJson(String raw) {
     try {
@@ -570,10 +603,10 @@ class ModelManager {
   /// Per-file completeness floors. Weights need megabytes; `vocab.txt` is only
   /// ~227 KB and a flat 1 MB check would treat it as permanently missing.
   static Map<String, int> _floorsFor(LocalModel m) => <String, int>{
-        m.fileName: m.minBytes,
-        if (m.projectorFileName != null) m.projectorFileName!: m.minBytes,
-        for (final f in m.extraFiles) f.name: f.minBytes,
-      };
+    m.fileName: m.minBytes,
+    if (m.projectorFileName != null) m.projectorFileName!: m.minBytes,
+    for (final f in m.extraFiles) f.name: f.minBytes,
+  };
 
   /// True when every file the model needs is present on disk and complete.
   ///
@@ -651,18 +684,25 @@ class ModelManager {
   ) async {
     final approxTotal = m.approxBytes;
 
-    void emit(int received, int total, String file,
-        {bool done = false, String? error}) {
+    void emit(
+      int received,
+      int total,
+      String file, {
+      bool done = false,
+      String? error,
+    }) {
       if (controller.isClosed) return;
       try {
-        controller.add(DownloadProgress(
-          modelId: m.id,
-          received: received,
-          total: total,
-          currentFile: file,
-          done: done,
-          error: error,
-        ));
+        controller.add(
+          DownloadProgress(
+            modelId: m.id,
+            received: received,
+            total: total,
+            currentFile: file,
+            done: done,
+            error: error,
+          ),
+        );
       } catch (_) {
         // The listener went away mid-download; nothing useful to do.
       }
@@ -672,15 +712,22 @@ class ModelManager {
       final integrity = integrityFor(m);
       if (integrity == null || !isImmutableCommitSha(integrity.commitSha)) {
         // Fail closed: no pin means no verified download.
-        emit(0, approxTotal, m.fileName,
-            error: 'No pinned integrity manifest for ${m.id}; refusing to '
-                'download from a mutable URL.');
+        emit(
+          0,
+          approxTotal,
+          m.fileName,
+          error:
+              'No pinned integrity manifest for ${m.id}; refusing to '
+              'download from a mutable URL.',
+        );
         return;
       }
 
       final dir = await modelsDir();
-      final expectedTotal =
-          integrity.files.values.fold<int>(0, (a, f) => a + f.size);
+      final expectedTotal = integrity.files.values.fold<int>(
+        0,
+        (a, f) => a + f.size,
+      );
 
       // --- free space -------------------------------------------------------
       final missing = <({String name, String url, int size})>[];
@@ -688,9 +735,14 @@ class ModelManager {
       for (final f in m.files) {
         final entry = integrity.files[f.name];
         if (entry == null) {
-          emit(0, approxTotal, f.name,
-              error: 'Manifest is missing an entry for ${f.name}; refusing to '
-                  'download.');
+          emit(
+            0,
+            approxTotal,
+            f.name,
+            error:
+                'Manifest is missing an entry for ${f.name}; refusing to '
+                'download.',
+          );
           return;
         }
         final target = File(await pathForFile(f.name));
@@ -706,12 +758,19 @@ class ModelManager {
         final probe = freeSpaceProbe;
         final free = probe == null ? null : await probe(dir.path);
         if (free == null) {
-          Log.w('ModelManager: free space unknown on this platform; skipping '
-              'the pre-download check (need ~$needed bytes for ${m.id}).');
+          Log.w(
+            'ModelManager: free space unknown on this platform; skipping '
+            'the pre-download check (need ~$needed bytes for ${m.id}).',
+          );
         } else if (free < needed + _freeSpaceReserve) {
-          emit(0, approxTotal, m.fileName,
-              error: 'Not enough free space: need '
-                  '${needed + _freeSpaceReserve} bytes, have $free.');
+          emit(
+            0,
+            approxTotal,
+            m.fileName,
+            error:
+                'Not enough free space: need '
+                '${needed + _freeSpaceReserve} bytes, have $free.',
+          );
           return;
         }
       }
@@ -830,9 +889,11 @@ class ModelManager {
 
         var append = false;
         if (response.statusCode == 206) {
-          final rangeStart =
-              _parseContentRangeStart(response.headers['content-range']);
-          final usable = !plan.restart &&
+          final rangeStart = _parseContentRangeStart(
+            response.headers['content-range'],
+          );
+          final usable =
+              !plan.restart &&
               plan.startByte > 0 &&
               interpretRangedGet(
                     statusCode: 206,
@@ -904,8 +965,10 @@ class ModelManager {
             // A short file is a valid *prefix* of the real one, so keep it and
             // its validators for the next run to resume — deleting here would
             // recreate the endless-restart loop for exactly this model.
-            onError('$fileName incomplete (${verification.message}); progress '
-                'kept, retry to resume.');
+            onError(
+              '$fileName incomplete (${verification.message}); progress '
+              'kept, retry to resume.',
+            );
             return false;
           }
           // Wrong bytes at the right size, or the wrong length entirely: the
@@ -930,9 +993,11 @@ class ModelManager {
         } catch (_) {}
         client.close();
         if (e is TimeoutException) {
-          onError('Download stalled (no data for '
-              '${_inactivityTimeout.inSeconds}s); progress kept, retry to '
-              'resume.');
+          onError(
+            'Download stalled (no data for '
+            '${_inactivityTimeout.inSeconds}s); progress kept, retry to '
+            'resume.',
+          );
         } else {
           onError('Download interrupted: $e (progress kept, retry to resume)');
         }
@@ -1043,9 +1108,19 @@ Future<void> _writeMeta(File meta, _PartMeta data) async {
   } catch (_) {}
 }
 
-/// True when an `Accept-Ranges` header advertises byte ranges.
-bool _acceptsRanges(String? header) =>
-    header != null && header.toLowerCase().contains('bytes');
+/// Parses the Accept-Ranges header into a tri-state: true/false/null.
+///
+/// `null` means the server omitted the header entirely (common on a 206
+/// response where it is redundant). We must not treat that as "no ranges":
+/// a 206 body is itself proof that ranges work, so null means "unknown" and
+/// resume planning treats it as permissive.
+bool? _acceptsRanges(String? header) {
+  if (header == null) return null;
+  final lower = header.toLowerCase();
+  if (lower.contains('bytes')) return true;
+  if (lower.contains('none')) return false;
+  return null;
+}
 
 /// Parses the start offset from a `Content-Range` header
 /// (`bytes 100-999/1000`), or null when absent/unparseable.

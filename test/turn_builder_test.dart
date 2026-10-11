@@ -31,22 +31,29 @@ void main() {
       final sel = buildRecentTurns(history: history, tokenBudget: 60);
 
       final text = sel.turns.map((t) => t.content).join('|');
-      expect(text, contains('message 39'),
-          reason: 'the newest message must survive');
-      expect(text, isNot(contains('message 0')),
-          reason: 'the oldest messages must be the ones dropped');
+      expect(
+        text,
+        contains('message 39'),
+        reason: 'the newest message must survive',
+      );
+      expect(
+        text,
+        isNot(contains('message 0')),
+        reason: 'the oldest messages must be the ones dropped',
+      );
     });
 
     test('never exceeds the token budget', () {
-      final history = [
-        for (var i = 0; i < 40; i++) Turn('user', 'x' * 200),
-      ];
+      final history = [for (var i = 0; i < 40; i++) Turn('user', 'x' * 200)];
       const budget = 200;
 
       final sel = buildRecentTurns(history: history, tokenBudget: budget);
 
-      expect(sel.estimatedTokens, lessThanOrEqualTo(budget + 60),
-          reason: 'only the always-kept question may exceed the budget');
+      expect(
+        sel.estimatedTokens,
+        lessThanOrEqualTo(budget + 60),
+        reason: 'only the always-kept question may exceed the budget',
+      );
     });
 
     test('always includes the system prompt', () {
@@ -92,8 +99,11 @@ void main() {
 
       final sel = buildRecentTurns(history: history, tokenBudget: 500);
 
-      expect(sel.turns.map((t) => t.content).toList(),
-          ['first', 'second', 'third']);
+      expect(sel.turns.map((t) => t.content).toList(), [
+        'first',
+        'second',
+        'third',
+      ]);
     });
 
     test('a turn appears exactly once', () {
@@ -123,10 +133,15 @@ void main() {
         reserveForResponse: 500,
       );
 
-      expect(reserved.turns.length, lessThan(generous.turns.length),
-          reason: 'reserving space must evict older turns');
-      expect(reserved.estimatedTokens,
-          lessThanOrEqualTo(generous.estimatedTokens));
+      expect(
+        reserved.turns.length,
+        lessThan(generous.turns.length),
+        reason: 'reserving space must evict older turns',
+      );
+      expect(
+        reserved.estimatedTokens,
+        lessThanOrEqualTo(generous.estimatedTokens),
+      );
     });
 
     test('reports truncation when history is dropped', () {
@@ -145,9 +160,7 @@ void main() {
     });
 
     test('drops old turns but keeps a contiguous recent window', () {
-      final history = [
-        for (var i = 0; i < 20; i++) Turn('user', 'm$i'),
-      ];
+      final history = [for (var i = 0; i < 20; i++) Turn('user', 'm$i')];
 
       final sel = buildRecentTurns(history: history, tokenBudget: 60);
       final contents = sel.turns.map((t) => t.content).toList();

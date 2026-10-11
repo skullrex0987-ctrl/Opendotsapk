@@ -6,9 +6,11 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:uuid/uuid.dart';
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+
 import '../providers/providers.dart';
 import '../widgets/message_bubble.dart';
 import '../../core/constants/app_constants.dart';
@@ -75,12 +77,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     _scrollController.dispose();
     super.dispose();
   }
-  
+
   @override
   Widget build(BuildContext context) {
     final messages = ref.watch(chatMessagesProvider);
     final settings = ref.watch(settingsProvider);
-    
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('LocalMind'),
@@ -96,14 +98,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               if (value == 'export') _exportChat();
             },
             itemBuilder: (context) => const [
-              PopupMenuItem(
-                value: 'model',
-                child: Text('Select Model'),
-              ),
-              PopupMenuItem(
-                value: 'export',
-                child: Text('Export chat'),
-              ),
+              PopupMenuItem(value: 'model', child: Text('Select Model')),
+              PopupMenuItem(value: 'export', child: Text('Export chat')),
             ],
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -168,7 +164,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 IconButton(
                   icon: const Icon(Icons.attach_file),
                   onPressed: _pickDocument,
-                  tooltip: 'Attach a document: ${DocumentService.supportedSummary}',
+                  tooltip:
+                      'Attach a document: ${DocumentService.supportedSummary}',
                   color: Colors.grey[400],
                 ),
                 IconButton(
@@ -219,7 +216,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   /// Badge under the composer showing the router's decision.
   Widget _buildRouteBadge() {
-    final isCloud = _lastRoute!.toLowerCase().contains('cloud') ||
+    final isCloud =
+        _lastRoute!.toLowerCase().contains('cloud') ||
         _lastRoute!.toLowerCase().contains('sent to');
     return Container(
       width: double.infinity,
@@ -348,9 +346,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     } catch (e) {
       Log.w('image pick failed: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not open the gallery: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not open the gallery: $e')));
     }
   }
 
@@ -433,9 +431,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     } catch (e) {
       Log.w('document ingest failed: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$e')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
     }
   }
 
@@ -453,7 +449,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final docCtx = _attachedDocs.isEmpty
         ? ''
         : '\n\nContext from attached documents:\n'
-            '${_attachedDocs.map((d) => '--- ${d.name} ---\n${TextUtils.ellipsize(d.text, 4000)}').join('\n\n')}';
+              '${_attachedDocs.map((d) => '--- ${d.name} ---\n${TextUtils.ellipsize(d.text, 4000)}').join('\n\n')}';
 
     final display = messageText.isEmpty
         ? (hasImages ? '(image)' : '(document)')
@@ -495,8 +491,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       config: routeConfigForTurn(
         mode: '${settings['cloud_mode'] ?? 'auto'}',
         privateMode: settings['private_mode'] as bool? ?? false,
-        preferLocalOnMetered:
-            settings['prefer_local_metered'] as bool? ?? true,
+        preferLocalOnMetered: settings['prefer_local_metered'] as bool? ?? true,
         sendToCloudOnce: sendToCloudOnce,
       ),
       hasImages: hasImages,
@@ -515,7 +510,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       // Say why, in the transcript, and stop. Calling a model here would mean
       // returning a confident answer to a question it was never shown.
       Log.w('turn refused: ${decision.reason}');
-      await ref.read(chatMessagesProvider.notifier).addMessage(
+      await ref
+          .read(chatMessagesProvider.notifier)
+          .addMessage(
             ChatMessage(
               id: _uuid.v4(),
               role: 'assistant',
@@ -560,9 +557,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       await _finishAssistantMessage();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Error: $e')));
       }
     } finally {
       if (mounted) {
@@ -656,9 +652,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     } catch (e) {
       Log.w('cloud turn failed: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$e')),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('$e')));
       }
     } finally {
       if (mounted) {
@@ -719,7 +714,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       Log.w('export failed: $e');
     }
   }
-  
+
   /// Tokens reserved for the reply when budgeting history.
   ///
   /// Without this the transcript can fill the whole context window and the
@@ -739,7 +734,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   /// The return is split into the parts `LlmService.generateStream` expects,
   /// which is what keeps `test/llm_wire_format_test.dart` green.
   ({String prompt, String? systemPrompt, List<Map<String, String>> history})
-      _buildRequest({
+  _buildRequest({
     required String message,
     required List<ChatMessage> priorHistory,
   }) {
@@ -769,10 +764,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final prompt = turns.last.content;
 
     // Everything between the system prompt and the question is history.
-    final body = turns.sublist(
-      hasSystem ? 1 : 0,
-      turns.length - 1,
-    );
+    final body = turns.sublist(hasSystem ? 1 : 0, turns.length - 1);
 
     return (
       prompt: prompt,
@@ -821,7 +813,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
     _flushNow();
   }
-  
+
   void _clearChat() {
     showDialog(
       context: context,
@@ -844,20 +836,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       ),
     );
   }
-  
+
   void _showModelSelector() {
     showDialog(
       context: context,
       builder: (context) => const ModelSelectorDialog(),
     );
   }
-  
+
   Future<void> _showModelNotLoadedDialog() async {
     await showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Model Not Loaded'),
-        content: const Text('Please download and load a model first. Go to Settings > Model Management.'),
+        content: const Text(
+          'Please download and load a model first. Go to Settings > Model Management.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -867,24 +861,24 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       ),
     );
   }
-  
+
   void _startVoiceInput() async {
     final speechNotifier = ref.read(speechToTextProvider.notifier);
     final isAvailable = ref.read(speechToTextProvider);
-    
+
     if (!isAvailable) {
       await speechNotifier.init();
       if (!ref.read(speechToTextProvider)) return;
     }
-    
+
     final speech = ref.read(speechToTextProvider.notifier);
     final result = await speech.listenOnce();
-    
+
     if (result != null && result.isNotEmpty && mounted) {
       _sendMessage(result);
     }
   }
-  
+
   void _scrollToBottom() {
     Future.delayed(const Duration(milliseconds: 100), () {
       _scrollController.animateTo(
@@ -926,7 +920,7 @@ class ModelSelectorDialog extends ConsumerWidget {
       ],
     );
   }
-  
+
   /// Load the models the user selected in Settings -> Models.
   ///
   /// Downloading lives in the Models screen; this binds what is already on disk
@@ -1006,7 +1000,8 @@ class ModelSelectorDialog extends ConsumerWidget {
         '${ref.read(settingsProvider)['gpu_offload'] ?? 'auto'}',
       );
       // Read thread count from settings; default to 4 if missing.
-      final threads = int.tryParse('${ref.read(settingsProvider)['cpu_threads']}') ?? 4;
+      final threads =
+          int.tryParse('${ref.read(settingsProvider)['cpu_threads']}') ?? 4;
       llmService.setThreads(threads);
       ok = await llmService.loadModel(
         await manager.weightPath(chat),
@@ -1019,7 +1014,8 @@ class ModelSelectorDialog extends ConsumerWidget {
         if (projector != null) {
           final visionOk = await llmService.loadVision(projector);
           if (!visionOk) {
-            message = '${chat.displayName} loaded, but vision failed to attach.'
+            message =
+                '${chat.displayName} loaded, but vision failed to attach.'
                 '${llmService.lastVisionError == null ? '' : ' ${llmService.lastVisionError}'}';
           }
         }
@@ -1051,12 +1047,14 @@ class ModelSelectorDialog extends ConsumerWidget {
     if (context.mounted) Navigator.of(context).pop(); // progress dialog
     if (!context.mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Future<void> _loadModelFromStorage(BuildContext context, WidgetRef ref) async {
+  Future<void> _loadModelFromStorage(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
     // Pick any GGUF from the device and bind it directly — useful for models
     // the catalog does not know about.
     try {
@@ -1070,8 +1068,10 @@ class ModelSelectorDialog extends ConsumerWidget {
       if (!path.toLowerCase().endsWith('.gguf')) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('That is not a .gguf file. Vision projectors must '
-                'also be GGUF (mmproj-*.gguf).'),
+            content: Text(
+              'That is not a .gguf file. Vision projectors must '
+              'also be GGUF (mmproj-*.gguf).',
+            ),
           ),
         );
         return;
@@ -1083,7 +1083,9 @@ class ModelSelectorDialog extends ConsumerWidget {
         builder: (_) => const Center(child: CircularProgressIndicator()),
       );
 
-      final ok = await ref.read(llmServiceProvider).loadModel(
+      final ok = await ref
+          .read(llmServiceProvider)
+          .loadModel(
             path,
             gpuLayers: (await GpuService.detect()).recommendedGpuLayers,
           );
@@ -1101,15 +1103,19 @@ class ModelSelectorDialog extends ConsumerWidget {
       // after a storage load. The picker will read "Nothing loaded" until the
       // user taps Load again with a catalog model selected.
       if (context.mounted) {
-        await ref.read(settingsProvider.notifier).updateSetting('model_path', null);
-        await ref.read(settingsProvider.notifier).updateSetting('active_llm_id', null);
+        await ref
+            .read(settingsProvider.notifier)
+            .updateSetting('model_path', null);
+        await ref
+            .read(settingsProvider.notifier)
+            .updateSetting('active_llm_id', null);
       }
     } catch (e) {
       Log.w('load from storage failed: $e');
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not load that file: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not load that file: $e')));
     }
   }
 }
@@ -1207,8 +1213,8 @@ class _ModelPickerBodyState extends ConsumerState<_ModelPickerBody> {
             !usable
                 ? Icons.block
                 : (selected
-                    ? Icons.radio_button_checked
-                    : Icons.radio_button_unchecked),
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked),
             size: 20,
             color: selected ? Theme.of(context).colorScheme.primary : null,
           ),
@@ -1217,11 +1223,10 @@ class _ModelPickerBodyState extends ConsumerState<_ModelPickerBody> {
             !usable
                 ? (m.unsupportedReason ?? 'Not supported by this build')
                 : '${m.sizeLabel}  ·  '
-                    '${installed ? 'downloaded' : 'not downloaded'}',
+                      '${installed ? 'downloaded' : 'not downloaded'}',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color:
-                      usable ? null : Theme.of(context).colorScheme.error,
-                ),
+              color: usable ? null : Theme.of(context).colorScheme.error,
+            ),
           ),
           onTap: tappable ? () => _choose(m) : null,
         );
@@ -1271,9 +1276,8 @@ class _ModelPickerBodyState extends ConsumerState<_ModelPickerBody> {
                 child: Text(
                   'The file in memory is not the model selected below. '
                   'Tap Load to switch.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
+                  style: Theme.of(context).textTheme.bodySmall
+                      ?.copyWith(color: Theme.of(context).colorScheme.error),
                 ),
               ),
             // Architecture mismatch warning: Qwen3.5 vision requires its
@@ -1281,8 +1285,11 @@ class _ModelPickerBodyState extends ConsumerState<_ModelPickerBody> {
             // at the native layer because the projector expects qwen35 context.
             // Note: Cannot use await in build(), so we check synchronously
             if (_isVisionArchIncompatible(
-                vision: _visionId != null ? ModelCatalog.byId(_visionId) : null,
-                chat: _llmId != null ? ModelCatalog.byId(_llmId)! : ModelCatalog.defaultLlm))
+              vision: _visionId != null ? ModelCatalog.byId(_visionId) : null,
+              chat: _llmId != null
+                  ? ModelCatalog.byId(_llmId)!
+                  : ModelCatalog.defaultLlm,
+            ))
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Text(
@@ -1290,9 +1297,8 @@ class _ModelPickerBodyState extends ConsumerState<_ModelPickerBody> {
                   '${_visionId != null ? (ModelCatalog.byId(_visionId)?.displayName ?? "vision model") : "vision model"}. '
                   'Vision projectors only work with their matching LLM. '
                   'Select the vision model as the chat model instead.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
+                  style: Theme.of(context).textTheme.bodySmall
+                      ?.copyWith(color: Theme.of(context).colorScheme.error),
                 ),
               ),
             const Divider(),
@@ -1333,13 +1339,6 @@ class _ModelPickerBodyState extends ConsumerState<_ModelPickerBody> {
     if (chatArch == null) return false;
     return chatArch != vision.llmArch;
   }
-
-  /// Async helper to get the active LLM and vision models for the mismatch check.
-  Future<({LocalModel chat, LocalModel? vision})> _getActiveModels() async {
-    final chat = await _manager.activeLlm();
-    final vision = await _manager.activeVision();
-    return (chat: chat, vision: vision);
-  }
 }
 
 /// Thinking indicator widget
@@ -1369,10 +1368,7 @@ class ThinkingBubble extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 12),
-            Text(
-              'Thinking...',
-              style: TextStyle(color: Colors.grey[400]),
-            ),
+            Text('Thinking...', style: TextStyle(color: Colors.grey[400])),
           ],
         ),
       ),

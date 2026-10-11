@@ -32,7 +32,6 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
 
   bool _benchmarking = false;
   String? _benchmarkResult;
-  double? _lastTokensPerSecond;
 
   @override
   void initState() {
@@ -100,8 +99,10 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('This device',
-                style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text(
+              'This device',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 10),
             _row('System on chip', gpu.socModel),
             _row('Hardware', gpu.hardware),
@@ -130,8 +131,10 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Compute backend',
-                style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text(
+              'Compute backend',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 10),
             SegmentedButton<String>(
               segments: const [
@@ -180,8 +183,10 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('CPU Threads',
-                style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text(
+              'CPU Threads',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 8),
             Text(
               'Controls how many CPU cores are used for inference. More threads '
@@ -209,8 +214,7 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
                     },
                   ),
                 ),
-                Text('$current',
-                    style: const TextStyle(fontSize: 13)),
+                Text('$current', style: const TextStyle(fontSize: 13)),
               ],
             ),
           ],
@@ -221,12 +225,16 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
 
   Future<void> _setMode(String mode) async {
     final settings = ref.read(settingsProvider);
-    await ref.read(settingsProvider.notifier).updateSetting('gpu_offload', mode);
+    await ref
+        .read(settingsProvider.notifier)
+        .updateSetting('gpu_offload', mode);
     if (!mounted) return;
 
     // Also save thread count when reloading
     final currentThreads = int.tryParse('${settings['cpu_threads']}') ?? 4;
-    await ref.read(settingsProvider.notifier).updateSetting('cpu_threads', currentThreads);
+    await ref
+        .read(settingsProvider.notifier)
+        .updateSetting('cpu_threads', currentThreads);
 
     // The backend is fixed at model-load time, so the change only takes effect
     // after a reload. Offer it rather than silently doing nothing.
@@ -291,8 +299,10 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Benchmark',
-                style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text(
+              'Benchmark',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 8),
             const Text(
               'Generates a short reply and measures throughput. Run it on the '
@@ -314,7 +324,9 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
             ),
             const SizedBox(height: 8),
             OutlinedButton.icon(
-              onPressed: (_benchmarking || !llm.isLoaded) ? null : _autoBenchmark,
+              onPressed: (_benchmarking || !llm.isLoaded)
+                  ? null
+                  : _autoBenchmark,
               icon: _benchmarking
                   ? const SizedBox(
                       width: 16,
@@ -333,8 +345,10 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
             ],
             if (_benchmarkResult != null) ...[
               const SizedBox(height: 12),
-              Text(_benchmarkResult!,
-                  style: const TextStyle(fontSize: 13, height: 1.4)),
+              Text(
+                _benchmarkResult!,
+                style: const TextStyle(fontSize: 13, height: 1.4),
+              ),
             ],
           ],
         ),
@@ -396,8 +410,6 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
     });
 
     final llm = ref.read(llmServiceProvider);
-    final settings = ref.read(settingsProvider);
-    final originalMode = '${settings['gpu_offload'] ?? 'auto'}';
 
     // Test CPU first
     await _applyMode('cpu');
@@ -405,7 +417,8 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
 
     if (!mounted) return;
     setState(() {
-      _benchmarkResult = 'CPU: ${cpuTps.toStringAsFixed(1)} tok/s. Testing GPU…';
+      _benchmarkResult =
+          'CPU: ${cpuTps.toStringAsFixed(1)} tok/s. Testing GPU…';
     });
 
     // Test GPU
@@ -447,7 +460,9 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
   }
 
   Future<void> _applyMode(String mode) async {
-    await ref.read(settingsProvider.notifier).updateSetting('gpu_offload', mode);
+    await ref
+        .read(settingsProvider.notifier)
+        .updateSetting('gpu_offload', mode);
     // Reload model with new settings
     final llm = ref.read(llmServiceProvider);
     final path = llm.modelPath;
@@ -468,18 +483,21 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
           children: [
             Row(
               children: [
-                const Text('Neural accelerator',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text(
+                  'Neural accelerator',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
                 const SizedBox(width: 8),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.grey.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Text('not used',
-                      style: TextStyle(fontSize: 10)),
+                  child: const Text('not used', style: TextStyle(fontSize: 10)),
                 ),
               ],
             ),
@@ -493,7 +511,11 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
               'no portable NPU backend for llama.cpp, so claiming NPU '
               'acceleration here would be a lie. This app uses the GPU '
               '(Vulkan) or the CPU.',
-              style: TextStyle(fontSize: 11, height: 1.4, color: Colors.grey[500]),
+              style: TextStyle(
+                fontSize: 11,
+                height: 1.4,
+                color: Colors.grey[500],
+              ),
             ),
           ],
         ),
@@ -509,14 +531,13 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
         children: [
           SizedBox(
             width: 130,
-            child: Text(label,
-                style: TextStyle(fontSize: 12, color: Colors.grey[500])),
+            child: Text(
+              label,
+              style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+            ),
           ),
           Expanded(
-            child: SelectableText(
-              value,
-              style: const TextStyle(fontSize: 12),
-            ),
+            child: SelectableText(value, style: const TextStyle(fontSize: 12)),
           ),
         ],
       ),

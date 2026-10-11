@@ -165,7 +165,9 @@ class CryptoBox {
 
     final key = _key;
     if (key == null || _disabled) {
-      Log.w('CryptoBox.decryptChecked: encrypted value found but no key loaded');
+      Log.w(
+        'CryptoBox.decryptChecked: encrypted value found but no key loaded',
+      );
       return const DecryptFailure(DecryptFailureReason.noKey);
     }
 

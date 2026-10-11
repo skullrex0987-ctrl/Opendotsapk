@@ -31,13 +31,16 @@ void main() {
       expect(enc.startsWith('enc:v1:'), isTrue);
     });
 
-    test('is non-deterministic: same input never yields same ciphertext', () async {
-      final a = await box.encrypt('repeat');
-      final b = await box.encrypt('repeat');
-      expect(a, isNot(b));
-      expect(await box.decrypt(a), 'repeat');
-      expect(await box.decrypt(b), 'repeat');
-    });
+    test(
+      'is non-deterministic: same input never yields same ciphertext',
+      () async {
+        final a = await box.encrypt('repeat');
+        final b = await box.encrypt('repeat');
+        expect(a, isNot(b));
+        expect(await box.decrypt(a), 'repeat');
+        expect(await box.decrypt(b), 'repeat');
+      },
+    );
 
     test('round-trips unicode and emoji', () async {
       const plain = 'héllo 世界 🍠 مرحبا';
@@ -65,32 +68,41 @@ void main() {
       expect(CryptoBox.generateKeyBase64(), isNot(k));
     });
 
-    test('rejects a key of the wrong length instead of silently accepting it', () {
-      // A truncated key would encrypt fine and then fail to decrypt later.
-      expect(() => box.installKey('c2hvcnQ='), throwsArgumentError);
-    });
+    test(
+      'rejects a key of the wrong length instead of silently accepting it',
+      () {
+        // A truncated key would encrypt fine and then fail to decrypt later.
+        expect(() => box.installKey('c2hvcnQ='), throwsArgumentError);
+      },
+    );
 
-    test('a value encrypted under a different key does not decrypt to plaintext', () async {
-      final enc = await box.encrypt('secret value');
+    test(
+      'a value encrypted under a different key does not decrypt to plaintext',
+      () async {
+        final enc = await box.encrypt('secret value');
 
-      // Swap in an unrelated key, as if the keystore entry were lost.
-      final other = CryptoBox.instance;
-      other.installKey(CryptoBox.generateKeyBase64());
+        // Swap in an unrelated key, as if the keystore entry were lost.
+        final other = CryptoBox.instance;
+        other.installKey(CryptoBox.generateKeyBase64());
 
-      final out = await other.decrypt(enc);
-      expect(out, isNot('secret value'));
-    });
+        final out = await other.decrypt(enc);
+        expect(out, isNot('secret value'));
+      },
+    );
 
     test('detects its own output', () {
       expect(CryptoBox.isEncrypted('enc:v1:abc'), isTrue);
       expect(CryptoBox.isEncrypted('plaintext'), isFalse);
     });
 
-    test('decrypting corrupt ciphertext returns empty rather than throwing', () async {
-      // A thrown exception here would take down a list rendering hundreds of rows.
-      final out = await box.decrypt('enc:v1:bm90LXJlYWxseS1jaXBoZXJ0ZXh0');
-      expect(out, '');
-    });
+    test(
+      'decrypting corrupt ciphertext returns empty rather than throwing',
+      () async {
+        // A thrown exception here would take down a list rendering hundreds of rows.
+        final out = await box.decrypt('enc:v1:bm90LXJlYWxseS1jaXBoZXJ0ZXh0');
+        expect(out, '');
+      },
+    );
 
     test('decrypting truncated ciphertext returns empty', () async {
       final out = await box.decrypt('enc:v1:AAAA');
@@ -100,10 +112,7 @@ void main() {
 
   group('vector codec', () {
     test('round-trips a 384-dim vector within float32 precision', () {
-      final original = List<double>.generate(
-        384,
-        (i) => (i % 17) / 17.0 - 0.5,
-      );
+      final original = List<double>.generate(384, (i) => (i % 17) / 17.0 - 0.5);
       final decoded = DatabaseHelper.decodeVector(
         DatabaseHelper.encodeVector(original),
       );
@@ -133,16 +142,20 @@ void main() {
     });
 
     test('empty vector round-trips', () {
-      expect(DatabaseHelper.decodeVector(DatabaseHelper.encodeVector([])),
-          isEmpty);
+      expect(
+        DatabaseHelper.decodeVector(DatabaseHelper.encodeVector([])),
+        isEmpty,
+      );
     });
 
     test('handles a sublist view (non-zero offset) correctly', () {
       // ByteData.view over a sublist is the classic way to get this wrong.
       final full = DatabaseHelper.encodeVector([1.0, 2.0, 3.0, 4.0]);
       final middle = Uint8List.sublistView(full, 4, 12);
-      expect(DatabaseHelper.decodeVector(middle),
-          equals([closeTo(2.0, 1e-6), closeTo(3.0, 1e-6)]));
+      expect(
+        DatabaseHelper.decodeVector(middle),
+        equals([closeTo(2.0, 1e-6), closeTo(3.0, 1e-6)]),
+      );
     });
   });
 }

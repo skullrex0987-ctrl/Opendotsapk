@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import 'presentation/providers/providers.dart';
 import 'presentation/screens/onboarding_screen.dart';
 import 'presentation/screens/main_screen.dart';
@@ -29,9 +30,7 @@ class LocalMindApp extends StatelessWidget {
           ),
         ),
         inputDecorationTheme: InputDecorationTheme(
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 16,
             vertical: 12,
@@ -69,8 +68,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
     var seenOnboarding = settings['onboarding_done'] == true;
     for (var i = 0; i < 10 && !seenOnboarding; i++) {
       await Future.delayed(const Duration(milliseconds: 150));
-      seenOnboarding =
-          ref.read(settingsProvider)['onboarding_done'] == true;
+      seenOnboarding = ref.read(settingsProvider)['onboarding_done'] == true;
       if (seenOnboarding) break;
     }
 
@@ -78,9 +76,8 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
 
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
-        builder: (_) => seenOnboarding
-            ? const _LockedShell()
-            : const OnboardingScreen(),
+        builder: (_) =>
+            seenOnboarding ? const _LockedShell() : const OnboardingScreen(),
       ),
     );
   }
@@ -98,7 +95,11 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
                 color: AppConstants.primaryColor,
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.psychology, size: 64, color: Colors.white),
+              child: const Icon(
+                Icons.psychology,
+                size: 64,
+                color: Colors.white,
+              ),
             ),
             const SizedBox(height: 24),
             const Text(

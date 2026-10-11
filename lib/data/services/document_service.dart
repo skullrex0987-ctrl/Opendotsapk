@@ -66,10 +66,41 @@ class DocumentService {
   static const int maxBytes = 8 * 1024 * 1024;
 
   static const Set<String> _plainExtensions = {
-    'txt', 'md', 'markdown', 'csv', 'tsv', 'json', 'jsonl', 'log',
-    'yaml', 'yml', 'xml', 'html', 'htm', 'ini', 'conf', 'toml',
-    'dart', 'py', 'js', 'ts', 'java', 'kt', 'go', 'rs', 'c', 'h',
-    'cpp', 'hpp', 'cs', 'rb', 'php', 'swift', 'sh', 'bash', 'sql',
+    'txt',
+    'md',
+    'markdown',
+    'csv',
+    'tsv',
+    'json',
+    'jsonl',
+    'log',
+    'yaml',
+    'yml',
+    'xml',
+    'html',
+    'htm',
+    'ini',
+    'conf',
+    'toml',
+    'dart',
+    'py',
+    'js',
+    'ts',
+    'java',
+    'kt',
+    'go',
+    'rs',
+    'c',
+    'h',
+    'cpp',
+    'hpp',
+    'cs',
+    'rb',
+    'php',
+    'swift',
+    'sh',
+    'bash',
+    'sql',
   };
 
   bool isSupported(String path) {
@@ -216,10 +247,15 @@ class DocumentService {
     for (final entry in archive.files) {
       if (!entry.isFile) continue;
       final n = entry.name.toLowerCase();
-      if (!(n.endsWith('.xhtml') || n.endsWith('.html') || n.endsWith('.htm'))) {
+      if (!(n.endsWith('.xhtml') ||
+          n.endsWith('.html') ||
+          n.endsWith('.htm'))) {
         continue;
       }
-      final html = utf8.decode(entry.content as List<int>, allowMalformed: true);
+      final html = utf8.decode(
+        entry.content as List<int>,
+        allowMalformed: true,
+      );
       buf.writeln(_xmlToText(html));
     }
 
@@ -235,12 +271,20 @@ class DocumentService {
     var s = xml;
 
     // Drop anything that is not content.
-    s = s.replaceAll(RegExp(r'<(script|style)[^>]*>.*?</\1>',
-        caseSensitive: false, dotAll: true), ' ');
+    s = s.replaceAll(
+      RegExp(
+        r'<(script|style)[^>]*>.*?</\1>',
+        caseSensitive: false,
+        dotAll: true,
+      ),
+      ' ',
+    );
     // Paragraph and line breaks become newlines.
     s = s.replaceAll(
-      RegExp(r'</(w:p|w:tr|p|div|br|li|h[1-6]|tr|section)>',
-          caseSensitive: false),
+      RegExp(
+        r'</(w:p|w:tr|p|div|br|li|h[1-6]|tr|section)>',
+        caseSensitive: false,
+      ),
       '\n',
     );
     s = s.replaceAll(RegExp(r'<w:br\s*/?>', caseSensitive: false), '\n');
@@ -288,4 +332,3 @@ class DocumentException implements Exception {
 /// without ever inflating FlateDecode content streams, so it returned nothing
 /// for essentially every real-world PDF. It also called a `flutter_pdf_text`
 /// API the project does not depend on.
-

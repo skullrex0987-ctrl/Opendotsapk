@@ -77,17 +77,6 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
     });
   }
 
-  String? _selectedFor(ModelKind kind) {
-    switch (kind) {
-      case ModelKind.llm:
-        return _activeLlm;
-      case ModelKind.vision:
-        return _activeVision;
-      case ModelKind.embedding:
-        return _activeEmbedding;
-    }
-  }
-
   Future<void> _select(LocalModel m, bool installed) async {
     switch (m.kind) {
       case ModelKind.llm:
@@ -121,30 +110,32 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
       }
     }
 
-    sub = _manager.download(m).listen(
-      (p) {
-        if (!mounted) return;
-        setState(() => _progress[m.id] = p.fraction ?? 0.0);
-        if (p.error != null) {
-          finish();
-          _toast('${m.displayName}: ${p.error}');
-          return;
-        }
-        if (p.done) {
-          finish();
-          // Selecting straight after a successful download saves a tap.
-          _select(m, true);
-          _loadStorage();
-          _toast('${m.displayName} installed');
-        }
-      },
-      onError: (Object e) {
-        finish();
-        _toast('Download failed: $e');
-      },
-      onDone: finish,
-      cancelOnError: true,
-    );
+    sub = _manager
+        .download(m)
+        .listen(
+          (p) {
+            if (!mounted) return;
+            setState(() => _progress[m.id] = p.fraction ?? 0.0);
+            if (p.error != null) {
+              finish();
+              _toast('${m.displayName}: ${p.error}');
+              return;
+            }
+            if (p.done) {
+              finish();
+              // Selecting straight after a successful download saves a tap.
+              _select(m, true);
+              _loadStorage();
+              _toast('${m.displayName} installed');
+            }
+          },
+          onError: (Object e) {
+            finish();
+            _toast('Download failed: $e');
+          },
+          onDone: finish,
+          cancelOnError: true,
+        );
 
     await completer.future;
   }
@@ -163,26 +154,31 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
         children: [
           const _SectionHeader(
             title: 'Chat model',
-            subtitle: 'The brain. Pick one — download it, then it is selected '
+            subtitle:
+                'The brain. Pick one — download it, then it is selected '
                 'automatically. Needs ~600 MB RAM.',
           ),
-          ...ModelCatalog.llms.map(
-            (m) => _row(m, selectedId: _activeLlm),
-          ),
+          ...ModelCatalog.llms.map((m) => _row(m, selectedId: _activeLlm)),
           const Divider(height: 32),
           const _SectionHeader(
             title: 'Vision model',
-            subtitle: 'Lets the agent read pictures. Qwen3.5 has vision built '
+            subtitle:
+                'Lets the agent read pictures. Qwen3.5 has vision built '
                 'in, so one download is enough — it chats and sees. Any entry '
                 'greyed out is not supported by this build\'s llama.cpp.',
           ),
           ...ModelCatalog.visionModels.map(
-            (m) => _row(m, selectedId: _activeVision, usable: ModelCatalog.isUsable(m)),
+            (m) => _row(
+              m,
+              selectedId: _activeVision,
+              usable: ModelCatalog.isUsable(m),
+            ),
           ),
           const Divider(height: 32),
           const _SectionHeader(
             title: 'Embeddings',
-            subtitle: 'Powers Memory search. Without it, past conversations '
+            subtitle:
+                'Powers Memory search. Without it, past conversations '
                 'are stored but never retrieved.',
           ),
           ...ModelCatalog.embeddingModels.map(
@@ -209,7 +205,6 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
         final selected = installed && selectedId == m.id;
         final busy = _busy.contains(m.id);
         final progress = _progress[m.id];
-        final active = usable && installed;
 
         return ListTile(
           leading: Icon(
@@ -227,17 +222,15 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
               Text(
                 '${m.sizeLabel}  ·  ${m.ramHint}  ·  ctx ${m.contextSize}'
                 '${installed ? '  ·  downloaded' : ''}',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.outline,
-                    ),
+                style: Theme.of(context).textTheme.bodySmall
+                    ?.copyWith(color: Theme.of(context).colorScheme.outline),
               ),
               if (m.unsupportedReason != null) ...[
                 const SizedBox(height: 4),
                 Text(
                   m.unsupportedReason!,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
+                  style: Theme.of(context).textTheme.bodySmall
+                      ?.copyWith(color: Theme.of(context).colorScheme.error),
                 ),
               ],
               if (busy && progress != null) ...[
@@ -254,36 +247,36 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : installed
-                  ? IconButton(
-                      tooltip: 'Delete',
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: () async {
-                        await _manager.delete(m);
-                        await _loadSelection();
-                        await _loadStorage();
-                        if (mounted) {
-                          setState(() {});
-                          _toast('${m.displayName} deleted');
-                        }
-                      },
-                    )
-                  : IconButton(
-                      tooltip: usable ? 'Download' : 'Not supported yet',
-                      icon: Icon(
-                        Icons.cloud_download_outlined,
-                        color: usable ? null : Colors.grey,
-                      ),
-                      onPressed: usable ? () => _download(m) : null,
-                    ),
+              ? IconButton(
+                  tooltip: 'Delete',
+                  icon: const Icon(Icons.delete_outline),
+                  onPressed: () async {
+                    await _manager.delete(m);
+                    await _loadSelection();
+                    await _loadStorage();
+                    if (mounted) {
+                      setState(() {});
+                      _toast('${m.displayName} deleted');
+                    }
+                  },
+                )
+              : IconButton(
+                  tooltip: usable ? 'Download' : 'Not supported yet',
+                  icon: Icon(
+                    Icons.cloud_download_outlined,
+                    color: usable ? null : Colors.grey,
+                  ),
+                  onPressed: usable ? () => _download(m) : null,
+                ),
           onTap: usable
               ? () async {
-            if (!installed) {
-              await _download(m);
-            } else {
-              await _select(m, true);
-              if (mounted) setState(() {});
-            }
-          }
+                  if (!installed) {
+                    await _download(m);
+                  } else {
+                    await _select(m, true);
+                    if (mounted) setState(() {});
+                  }
+                }
               : null,
         );
       },

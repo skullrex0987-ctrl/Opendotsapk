@@ -185,7 +185,8 @@ class RouterService {
           target: RouteTarget.cloud,
           provider: v.provider,
           modelId: v.modelId,
-          reason: 'Image attached but no on-device vision model is loaded — '
+          reason:
+              'Image attached but no on-device vision model is loaded — '
               'using ${v.provider.displayName}',
           forced: true,
         );
@@ -193,7 +194,8 @@ class RouterService {
       // No vision anywhere. Refuse rather than ask a model that cannot see.
       return const RouteDecision(
         target: RouteTarget.refused,
-        reason: 'This message has an image, but no vision model is loaded, so '
+        reason:
+            'This message has an image, but no vision model is loaded, so '
             'nothing can actually look at it. Load a vision model in '
             'Settings → Models, then send again.',
         forced: true,
@@ -276,10 +278,25 @@ class RouterService {
 
     // Things small on-device models are genuinely bad at.
     const hardMarkers = {
-      'prove', 'derive', 'algorithm', 'complexity', 'refactor',
-      'debug', 'stack trace', 'compile', 'regex', 'sql', 'architecture',
-      'step by step', 'think carefully', 'in depth', 'essay',
-      'translate', 'summarize this document', 'legal', 'medical',
+      'prove',
+      'derive',
+      'algorithm',
+      'complexity',
+      'refactor',
+      'debug',
+      'stack trace',
+      'compile',
+      'regex',
+      'sql',
+      'architecture',
+      'step by step',
+      'think carefully',
+      'in depth',
+      'essay',
+      'translate',
+      'summarize this document',
+      'legal',
+      'medical',
     };
     for (final m in hardMarkers) {
       if (lower.contains(m)) {
@@ -290,8 +307,10 @@ class RouterService {
     }
 
     // Obvious code is a strong signal: a 0.5B model cannot write it well.
-    if (lower.contains('```') || lower.contains('def ') ||
-        lower.contains('function ') || lower.contains('class ')) {
+    if (lower.contains('```') ||
+        lower.contains('def ') ||
+        lower.contains('function ') ||
+        lower.contains('class ')) {
       cloudScore += 3;
       reasons.add('code');
     }
@@ -309,9 +328,18 @@ class RouterService {
 
     // Personal-sounding turns belong on-device.
     const privateMarkers = {
-      'my password', 'my address', 'my number', 'my bank', 'my account',
-      'my messages', 'my contacts', 'my location', 'private', 'secret',
-      'diary', 'journal',
+      'my password',
+      'my address',
+      'my number',
+      'my bank',
+      'my account',
+      'my messages',
+      'my contacts',
+      'my location',
+      'private',
+      'secret',
+      'diary',
+      'journal',
     };
     for (final m in privateMarkers) {
       if (lower.contains(m)) {
@@ -336,8 +364,9 @@ class RouterService {
 
     if (cloudScore >= 3) {
       final c = _candidates.first;
-      final why = reasons.isEmpty ? 'better suited to a larger model'
-                                  : reasons.take(2).join(', ');
+      final why = reasons.isEmpty
+          ? 'better suited to a larger model'
+          : reasons.take(2).join(', ');
       return RouteDecision(
         target: RouteTarget.cloud,
         provider: c.provider,
@@ -372,9 +401,8 @@ class RouterService {
       final result = override != null
           ? await override(host).timeout(const Duration(seconds: 3))
           : await InternetAddress.lookup(host)
-              .timeout(const Duration(seconds: 3));
-      isOnline = result.isNotEmpty &&
-          result.first.rawAddress.isNotEmpty;
+                .timeout(const Duration(seconds: 3));
+      isOnline = result.isNotEmpty && result.first.rawAddress.isNotEmpty;
     } catch (_) {
       isOnline = false;
     }

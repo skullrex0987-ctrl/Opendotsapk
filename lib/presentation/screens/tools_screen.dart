@@ -44,7 +44,8 @@ class _ToolsScreenState extends ConsumerState<ToolsScreen> {
 
           const _SectionHeader(
             title: 'MCP servers',
-            subtitle: 'Connect external tools over the Model Context Protocol. '
+            subtitle:
+                'Connect external tools over the Model Context Protocol. '
                 'Anything a server exposes becomes available to the agent.',
           ),
           const McpServersPanel(),
@@ -80,7 +81,9 @@ class _ToolsScreenState extends ConsumerState<ToolsScreen> {
           ],
           onChanged: (v) {
             if (v == null) return;
-            ref.read(toolPermissionsProvider.notifier).setPermission(toolName, v);
+            ref
+                .read(toolPermissionsProvider.notifier)
+                .setPermission(toolName, v);
           },
         ),
       ),
@@ -131,12 +134,15 @@ class _SectionHeader extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title,
-              style: const TextStyle(
-                  fontWeight: FontWeight.bold, fontSize: 16)),
+          Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
           const SizedBox(height: 4),
-          Text(subtitle,
-              style: TextStyle(fontSize: 12, color: Colors.grey[400])),
+          Text(
+            subtitle,
+            style: TextStyle(fontSize: 12, color: Colors.grey[400]),
+          ),
           const SizedBox(height: 8),
         ],
       ),
@@ -228,20 +234,26 @@ class _McpServersPanelState extends ConsumerState<McpServersPanel> {
         ),
         if (_status != null) ...[
           const SizedBox(height: 10),
-          Text(_status!,
-              style: TextStyle(fontSize: 12, color: Colors.grey[400])),
+          Text(
+            _status!,
+            style: TextStyle(fontSize: 12, color: Colors.grey[400]),
+          ),
         ],
         if (_tools.isNotEmpty) ...[
           const SizedBox(height: 16),
-          Text('Available tools (${_tools.length})',
-              style: const TextStyle(fontWeight: FontWeight.bold)),
+          Text(
+            'Available tools (${_tools.length})',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
           const SizedBox(height: 6),
           for (final t in _tools)
             ListTile(
               dense: true,
               leading: const Icon(Icons.build_outlined, size: 18),
-              title: Text(t.qualifiedName,
-                  style: const TextStyle(fontSize: 13)),
+              title: Text(
+                t.qualifiedName,
+                style: const TextStyle(fontSize: 13),
+              ),
               subtitle: Text(
                 t.description.isEmpty ? '(no description)' : t.description,
                 style: const TextStyle(fontSize: 11),
@@ -315,12 +327,14 @@ class _McpServersPanelState extends ConsumerState<McpServersPanel> {
     final token = tokenCtl.text.trim();
 
     final mcp = ref.read(mcpServiceProvider);
-    mcp.addServer(McpServerConfig(
-      id: id,
-      name: nameCtl.text.trim().isEmpty ? 'Server $id' : nameCtl.text.trim(),
-      url: url,
-      requiresAuth: token.isNotEmpty,
-    ));
+    mcp.addServer(
+      McpServerConfig(
+        id: id,
+        name: nameCtl.text.trim().isEmpty ? 'Server $id' : nameCtl.text.trim(),
+        url: url,
+        requiresAuth: token.isNotEmpty,
+      ),
+    );
 
     // The token is a secret: keep it in the keystore, keyed by server id.
     if (token.isNotEmpty) {
@@ -346,8 +360,9 @@ class _McpServersPanelState extends ConsumerState<McpServersPanel> {
           : null;
       final tools = await mcp.connect(server, authToken: token);
       if (!mounted) return;
-      setState(() => _status =
-          'OK — ${server.name} exposed ${tools.length} tool(s).');
+      setState(
+        () => _status = 'OK — ${server.name} exposed ${tools.length} tool(s).',
+      );
       _refresh();
     } catch (e) {
       Log.w('mcp connect failed: $e');
@@ -383,7 +398,7 @@ class _McpServersPanelState extends ConsumerState<McpServersPanel> {
         _status = errors.isEmpty
             ? 'OK — all servers connected, ${mcp.allTools.length} tool(s) total.'
             : '${errors.length} server(s) failed. '
-                '${mcp.allTools.length} tool(s) available from the rest.';
+                  '${mcp.allTools.length} tool(s) available from the rest.';
       });
       _refresh();
     } finally {

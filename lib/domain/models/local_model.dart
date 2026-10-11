@@ -94,11 +94,11 @@ class LocalModel {
 
   /// All remote files this model needs.
   List<({String name, String url})> get files => [
-        (name: fileName, url: url),
-        if (projectorFileName != null && projectorUrl != null)
-          (name: projectorFileName!, url: projectorUrl!),
-        ...extraFiles.map((f) => (name: f.name, url: f.url)),
-      ];
+    (name: fileName, url: url),
+    if (projectorFileName != null && projectorUrl != null)
+      (name: projectorFileName!, url: projectorUrl!),
+    ...extraFiles.map((f) => (name: f.name, url: f.url)),
+  ];
 }
 
 class ModelCatalog {
@@ -190,7 +190,8 @@ class ModelCatalog {
     projectorUrl: 'https://huggingface.co/cjpais/moondream2-llamafile/resolve/main/moondream2-mmproj-050824-f16.gguf',
     contextSize: 2048,
     ramHint: '~2.4 GB',
-    unsupportedReason: 'llama.cpp has no Moondream2 vision encoder, so this '
+    unsupportedReason:
+        'llama.cpp has no Moondream2 vision encoder, so this '
         'projector cannot load on any phone. Use Qwen3.5 0.8B instead.',
   );
 
@@ -225,7 +226,12 @@ class ModelCatalog {
   /// Qwen3.5 is included here because it is a multimodal model — the same GGUF
   /// serves as both LLM and vision backbone, so users should be able to pick it
   /// as their chat model when they want vision support.
-  static const List<LocalModel> llms = [qwen05b, smolLm2_360m, qwen15b, qwen35_08b];
+  static const List<LocalModel> llms = [
+    qwen05b,
+    smolLm2_360m,
+    qwen15b,
+    qwen35_08b,
+  ];
 
   /// Models the user can pick for image understanding.
   ///

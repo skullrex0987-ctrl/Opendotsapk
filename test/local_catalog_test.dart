@@ -46,7 +46,11 @@ void main() {
 
     test('sizeLabel is human readable for every entry', () {
       for (final m in ModelCatalog.all) {
-        expect(m.sizeLabel, matches(RegExp(r'^\d+(\.\d+)? (MB|GB)$')), reason: m.id);
+        expect(
+          m.sizeLabel,
+          matches(RegExp(r'^\d+(\.\d+)? (MB|GB)$')),
+          reason: m.id,
+        );
       }
     });
   });
