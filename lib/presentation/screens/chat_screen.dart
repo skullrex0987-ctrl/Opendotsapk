@@ -1447,10 +1447,28 @@ class _ModelPickerBodyState extends ConsumerState<_ModelPickerBody> {
   String? _visionId;
   String? _embeddingId;
 
+  /// modelId -> whether it is fully on disk. Cached so the FutureBuilder does
+  /// not re-probe the filesystem on every rebuild, and so a row for a model
+  /// the user just downloaded inside this session flips without a full reload.
+  final Map<String, bool> _installed = {};
+
   @override
   void initState() {
     super.initState();
     _refresh();
+    _loadInstalled();
+  }
+
+  Future<void> _loadInstalled() async {
+    final results = await Future.wait(
+      ModelCatalog.all.map((m) async => (m.id, await _manager.isInstalled(m))),
+    );
+    if (!mounted) return;
+    setState(() {
+      for (final r in results) {
+        _installed[r.$1] = r.$2;
+      }
+    });
   }
 
   Future<void> _refresh() async {
@@ -1531,36 +1549,27 @@ class _ModelPickerBodyState extends ConsumerState<_ModelPickerBody> {
 
     return FadeSlideIn(
       delay: staggerDelay(index),
-      child: FutureBuilder<bool>(
-        future: _manager.isInstalled(m),
-        builder: (context, snap) {
-          final installed = snap.data ?? false;
-          final tappable = usable && installed;
-
-          // Derive status for the badge/icon.
-          _ModelStatus status;
-          if (!usable) {
-            status = _ModelStatus.notInstalled;
-          } else if (!installed) {
-            status = _ModelStatus.notInstalled;
-          } else if (selected) {
-            status = _ModelStatus.selectedPending;
-          } else {
-            status = _ModelStatus.installed;
-          }
-
-          return _ModelRowCard(
-            model: m,
-            section: section,
-            selected: selected,
-            installed: installed,
-            usable: usable,
-            status: status,
-            onTap: tappable ? () => _chooseIn(section, m) : null,
-          );
-        },
+      child: _ModelRowCard(
+        model: m,
+        section: section,
+        selected: selected,
+        installed: _installed[m.id] ?? false,
+        usable: usable,
+        status: _modelStatus(m, section, usable),
+        onTap: (usable && (_installed[m.id] ?? false))
+            ? () => _chooseIn(section, m)
+            : null,
       ),
     );
+  }
+
+  /// Derive the row status from the cached install map.
+  _ModelStatus _modelStatus(LocalModel m, ModelKind section, bool usable) {
+    if (!usable) return _ModelStatus.notInstalled;
+    final installed = _installed[m.id] ?? false;
+    if (!installed) return _ModelStatus.notInstalled;
+    if (_selectedId(section) == m.id) return _ModelStatus.selectedPending;
+    return _ModelStatus.installed;
   }
 
   @override

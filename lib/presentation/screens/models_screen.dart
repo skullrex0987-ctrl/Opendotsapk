@@ -236,6 +236,7 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
               _select(m, true, section);
               _toggleMultiSelect(m, true, section);
               _loadStorage();
+              _loadInstalled(); // refresh install cache
               _toast('${m.displayName} installed');
             }
           },
