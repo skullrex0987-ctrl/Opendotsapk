@@ -74,6 +74,8 @@ class _PromptLabScreenState extends ConsumerState<PromptLabScreen>
       final response = await llmService.generate(
         prompt: prompt,
         maxTokens: _maxTokens,
+        temperature: _temperature,
+        topK: _topK,
       );
       if (!mounted) return;
 
