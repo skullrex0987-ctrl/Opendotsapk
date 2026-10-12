@@ -79,11 +79,10 @@ void main() {
   });
 
   group('Moondream2', () {
-    test('is now usable (libmtmd supports it)', () {
-      final m = ModelCatalog.moondream2;
-      expect(ModelCatalog.isUsable(m), isTrue);
-      expect(m.unsupportedReason, isNull);
-      expect(ModelCatalog.visionModels.map((e) => e.id), contains(m.id));
+    test('has been removed from the catalog', () {
+      // Moondream2 was removed because the original files were removed from HuggingFace.
+      expect(ModelCatalog.all.map((e) => e.id), isNot(contains('moondream2-q5k')));
+      expect(ModelCatalog.visionModels.map((e) => e.id), isNot(contains('moondream2-q5k')));
     });
   });
 
