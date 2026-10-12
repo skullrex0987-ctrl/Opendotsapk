@@ -47,7 +47,7 @@ class _ChatMessageTileState extends State<ChatMessageTile>
 
   @override
   Widget build(BuildContext context) {
-    final isUser = message.role == 'user';
+    final isUser = widget.message.role == 'user';
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final text = theme.textTheme;
@@ -138,19 +138,19 @@ class _ChatMessageTileState extends State<ChatMessageTile>
                 ),
                 const Spacer(),
                 if (_hasTime)
-                  Text(_formatTime(message.timestamp), style: text.labelSmall),
+                  Text(_formatTime(widget.message.timestamp), style: text.labelSmall),
               ],
             ),
           if (!isUser) const SizedBox(height: 6),
           if (isUser)
-            SelectableText(message.content, style: text.bodyLarge)
+            SelectableText(widget.message.content, style: text.bodyLarge)
           else
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
                 MarkdownBody(
-                  data: message.content,
+                  data: widget.message.content,
                   selectable: true,
                   styleSheet: MarkdownStyleSheet.fromTheme(theme),
                 ),
@@ -161,7 +161,7 @@ class _ChatMessageTileState extends State<ChatMessageTile>
                     borderRadius: BorderRadius.circular(6),
                     onTap: () async {
                       await Clipboard.setData(
-                        ClipboardData(text: message.content),
+                        ClipboardData(text: widget.message.content),
                       );
                       if (context.mounted) {
                         ScaffoldMessenger.of(context)
@@ -186,7 +186,7 @@ class _ChatMessageTileState extends State<ChatMessageTile>
             Align(
               alignment: Alignment.centerRight,
               child: Text(
-                _formatTime(message.timestamp),
+                _formatTime(widget.message.timestamp),
                 style: text.labelSmall?.copyWith(color: Colors.white70),
               ),
             ),
@@ -197,7 +197,7 @@ class _ChatMessageTileState extends State<ChatMessageTile>
   }
 
   /// A zero timestamp means "not recorded"; there is nothing honest to show.
-  bool get _hasTime => message.timestamp > 0;
+  bool get _hasTime => widget.message.timestamp > 0;
 
   /// `HH:MM` in device-local time.
   ///

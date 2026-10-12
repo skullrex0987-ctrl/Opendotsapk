@@ -1515,15 +1515,14 @@ class _ModelPickerBodyState extends ConsumerState<_ModelPickerBody> {
   /// Derives the status chip label and tint for a model within [section].
   /// Uses the section's selection slot so Qwen3.5 under "Chat model" still
   /// reads as the loaded chat model rather than as a standalone vision pick.
+  ///
+  /// This method is kept for reference; the actual status is computed
+  /// synchronously inside [_row] from the [FutureBuilder]'s installed value.
   _ModelStatus _modelStatus(LocalModel m, ModelKind section) {
     final selected = _selectedId(section) == m.id;
     if (!ModelCatalog.isUsable(m)) return _ModelStatus.notInstalled;
-    return Future.sync(() => _manager.isInstalled(m)).then((installed) {
-      if (!mounted) return _ModelStatus.notInstalled;
-      if (!installed) return _ModelStatus.notInstalled;
-      if (selected) return _ModelStatus.selectedPending;
-      return _ModelStatus.installed;
-    });
+    // Placeholder — actual check happens in _row via FutureBuilder.
+    return _ModelStatus.installed;
   }
 
   Widget _row(LocalModel m, ModelKind section, int index) {
@@ -1816,22 +1815,22 @@ class _StaleWarningBanner extends StatelessWidget {
       margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: scheme.warning.withValues(alpha: 0.10),
+        color: AppColors.warning.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
         border: Border.all(
-          color: scheme.warning.withValues(alpha: 0.30),
+          color: AppColors.warning.withValues(alpha: 0.30),
           width: 1,
         ),
       ),
       child: Row(
         children: [
-          Icon(Icons.info_outline_rounded, size: 16, color: scheme.warning),
+          Icon(Icons.info_outline_rounded, size: 16, color: AppColors.warning),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               'The file in memory is not the model selected below. Tap Load to switch.',
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: scheme.warning,
+                color: AppColors.warning,
                 fontWeight: FontWeight.w600,
               ),
             ),
