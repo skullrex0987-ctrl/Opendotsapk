@@ -62,7 +62,7 @@ class _ChatMessageTileState extends State<ChatMessageTile>
           curve: AppMotion.enter,
           reverseCurve: AppMotion.exit,
         ),
-        child: _buildMessage(isUser, scheme, text, maxWidth),
+        child: _buildMessage(isUser, scheme, text, maxWidth, theme),
       ),
     );
   }
@@ -72,6 +72,7 @@ class _ChatMessageTileState extends State<ChatMessageTile>
     ColorScheme scheme,
     TextTheme text,
     double maxWidth,
+    ThemeData theme,
   ) {
     final bubble = _buildBubble(isUser, scheme, text, maxWidth);
 
