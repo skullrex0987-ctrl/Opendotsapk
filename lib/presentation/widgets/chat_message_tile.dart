@@ -215,6 +215,9 @@ class _ChatMessageTileState extends State<ChatMessageTile>
 ///
 /// Small, low-contrast, and cyan: it marks authorship without turning every
 /// reply into an avatar that competes with the text.
+///
+/// [theme] is passed through from [_buildMessage] so MarkdownStyleSheet can
+/// read the app's colour tokens instead of inventing its own defaults.
 class _AssistantAvatar extends StatefulWidget {
   @override
   State<_AssistantAvatar> createState() => _AssistantAvatarState();
