@@ -20,6 +20,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/log.dart';
 import '../../data/services/mcp_service.dart';
 import '../../data/services/secure_store.dart';
+import '../../presentation/screens/prompt_lab_screen.dart';
 import '../providers/providers.dart';
 import '../widgets/screen_empty_state.dart';
 import '../widgets/screen_section_card.dart';
@@ -44,6 +45,21 @@ class _ToolsScreenState extends ConsumerState<ToolsScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
+          // Prompt Lab entry
+          ScreenSection(
+            title: 'Prompt Lab',
+            subtitle:
+                'Test single prompts against the loaded model with adjustable parameters.',
+            padding: EdgeInsets.zero,
+            child: _PromptLabCard(
+              onTap: () {
+                Navigator.of(context).push(
+                  AppPageRoute(builder: (_) => const PromptLabScreen()),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 20),
           ScreenSection(
             title: 'Built-in tools',
             subtitle:
@@ -616,6 +632,69 @@ class _StatusLine extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Prompt Lab entry card shown at the top of Tools screen.
+class _PromptLabCard extends StatelessWidget {
+  const _PromptLabCard({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    return Card(
+      margin: EdgeInsets.zero,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: AppColors.accent.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.science_outlined,
+                  color: AppColors.accent,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Prompt Lab',
+                      style: theme.textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Test prompts with temperature, top-k, max tokens',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right,
+                color: scheme.onSurfaceVariant,
+                size: 20,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
