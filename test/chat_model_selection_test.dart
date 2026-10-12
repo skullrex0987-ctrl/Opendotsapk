@@ -29,7 +29,6 @@ void main() {
     });
 
     test('vision-only and embedding models are not chat-capable', () {
-      expect(ModelCatalog.isChatCapable(ModelCatalog.moondream2), isFalse);
       expect(ModelCatalog.isChatCapable(ModelCatalog.miniLm6), isFalse);
     });
 

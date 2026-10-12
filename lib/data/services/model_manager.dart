@@ -161,19 +161,6 @@ const Map<String, ModelIntegrity> modelIntegrityManifest = {
       ),
     },
   ),
-  'moondream2-q5k': ModelIntegrity(
-    commitSha: '8abde7e79de0c3bbbfeb29827ef594f36bc5fe67',
-    files: {
-      'moondream2-050824-q5k.gguf': FileIntegrity(
-        1059610016,
-        '17fd38418d407fca71b9eed817ae1ba9d602c891c67426a401d44149bd3db4a3',
-      ),
-      'moondream2-mmproj-050824-f16.gguf': FileIntegrity(
-        909777984,
-        '151e39246d5c80f215b4e7c73b913703055694239a3de4422005f78353e4e901',
-      ),
-    },
-  ),
   'all-minilm-l6-v2': ModelIntegrity(
     commitSha: '1110a243fdf4706b3f48f1d95db1a4f5529b4d41',
     files: {

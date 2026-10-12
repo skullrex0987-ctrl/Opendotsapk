@@ -268,7 +268,6 @@ class ModelCatalog {
     qwen35_08b,
     smolVlm500m,
     internVl2_5_1b,
-    moondream2,
   ];
 
   /// Models the user can pick for memory/retrieval.
@@ -281,7 +280,6 @@ class ModelCatalog {
     qwen35_08b,
     smolVlm500m,
     internVl2_5_1b,
-    moondream2,
     miniLm6,
   ];
 

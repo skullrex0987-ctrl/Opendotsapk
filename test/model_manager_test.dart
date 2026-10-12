@@ -428,14 +428,6 @@ void main() {
       }
     });
 
-    test('moondream2 size covers weights and projector', () {
-      final integrity = integrityFor(ModelCatalog.moondream2)!;
-      final total = integrity.files.values.fold<int>(0, (a, f) => a + f.size);
-      // 1,059,610,016 + 909,777,984
-      expect(total, 1969388000);
-      expect(ModelCatalog.moondream2.approxBytes, total);
-    });
-
     test('qwen3.5 size covers weights and projector', () {
       final integrity = integrityFor(ModelCatalog.qwen35_08b)!;
       final total = integrity.files.values.fold<int>(0, (a, f) => a + f.size);
