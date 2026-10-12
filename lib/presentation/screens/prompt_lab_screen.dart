@@ -12,7 +12,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/theme/motion.dart';
 import '../../data/services/model_manager.dart';
 import '../../data/services/llm_service.dart';
-import '../../providers/providers.dart';
+import '../../presentation/providers/providers.dart';
 
 class PromptLabScreen extends ConsumerStatefulWidget {
   const PromptLabScreen({super.key});

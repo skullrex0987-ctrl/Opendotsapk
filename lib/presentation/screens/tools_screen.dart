@@ -17,6 +17,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../core/constants/app_constants.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/theme/motion.dart';
 import '../../core/utils/log.dart';
 import '../../data/services/mcp_service.dart';
 import '../../data/services/secure_store.dart';

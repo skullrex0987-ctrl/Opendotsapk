@@ -1535,11 +1535,13 @@ class _ModelPickerBodyState extends ConsumerState<_ModelPickerBody> {
   /// reads as the loaded chat model rather than as a standalone vision pick.
   ///
   /// This method is kept for reference; the actual status is computed
-  /// synchronously inside [_row] from the [FutureBuilder]'s installed value.
+  /// synchronously inside [_row] from the cached [_installed] map.
   _ModelStatus _modelStatus(LocalModel m, ModelKind section) {
     final selected = _selectedId(section) == m.id;
     if (!ModelCatalog.isUsable(m)) return _ModelStatus.notInstalled;
-    // Placeholder — actual check happens in _row via FutureBuilder.
+    final installed = _installed[m.id] ?? false;
+    if (!installed) return _ModelStatus.notInstalled;
+    if (selected) return _ModelStatus.selectedPending;
     return _ModelStatus.installed;
   }
 
@@ -1555,21 +1557,12 @@ class _ModelPickerBodyState extends ConsumerState<_ModelPickerBody> {
         selected: selected,
         installed: _installed[m.id] ?? false,
         usable: usable,
-        status: _modelStatus(m, section, usable),
+        status: _modelStatus(m, section),
         onTap: (usable && (_installed[m.id] ?? false))
             ? () => _chooseIn(section, m)
             : null,
       ),
     );
-  }
-
-  /// Derive the row status from the cached install map.
-  _ModelStatus _modelStatus(LocalModel m, ModelKind section, bool usable) {
-    if (!usable) return _ModelStatus.notInstalled;
-    final installed = _installed[m.id] ?? false;
-    if (!installed) return _ModelStatus.notInstalled;
-    if (_selectedId(section) == m.id) return _ModelStatus.selectedPending;
-    return _ModelStatus.installed;
   }
 
   @override
