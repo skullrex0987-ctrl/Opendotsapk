@@ -74,7 +74,7 @@ class _ChatMessageTileState extends State<ChatMessageTile>
     double maxWidth,
     ThemeData theme,
   ) {
-    final bubble = _buildBubble(isUser, scheme, text, maxWidth);
+    final bubble = _buildBubble(isUser, scheme, text, maxWidth, theme);
 
     if (isUser) {
       return Align(alignment: Alignment.centerRight, child: bubble);
@@ -95,6 +95,7 @@ class _ChatMessageTileState extends State<ChatMessageTile>
     ColorScheme scheme,
     TextTheme text,
     double maxWidth,
+    ThemeData theme,
   ) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
