@@ -204,6 +204,7 @@ class ModelCatalog {
     contextSize: 2048,
     ramHint: '~800 MB',
     llmArch: 'llama',
+    isMultimodal: true, // can also serve as the chat model
   );
 
   /// InternVL2.5-1B: good vision quality at a small footprint (0.6B params).
@@ -223,6 +224,7 @@ class ModelCatalog {
     contextSize: 4096,
     ramHint: '~1.5 GB',
     llmArch: 'qwen2',
+    isMultimodal: true, // can also serve as the chat model
   );
 
   /// --------------------------------------------------------- embedding model
