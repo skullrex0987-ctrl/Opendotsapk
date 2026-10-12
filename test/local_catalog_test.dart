@@ -79,19 +79,11 @@ void main() {
   });
 
   group('Moondream2', () {
-    test('is disabled rather than silently missing', () {
+    test('is now usable (libmtmd supports it)', () {
       final m = ModelCatalog.moondream2;
-      expect(ModelCatalog.isUsable(m), isFalse);
-      expect(m.unsupportedReason, isNotNull);
-      // Still listed, so the UI can explain *why* it is unavailable.
+      expect(ModelCatalog.isUsable(m), isTrue);
+      expect(m.unsupportedReason, isNull);
       expect(ModelCatalog.visionModels.map((e) => e.id), contains(m.id));
-    });
-
-    test('the reason names the actual cause', () {
-      expect(
-        ModelCatalog.moondream2.unsupportedReason!.toLowerCase(),
-        contains('vision encoder'),
-      );
     });
   });
 
