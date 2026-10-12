@@ -261,6 +261,8 @@ class ModelCatalog {
     smolLm2_360m,
     qwen15b,
     qwen35_08b,
+    smolVlm500m,
+    internVl2_5_1b,
   ];
 
   /// Models the user can pick for image understanding.

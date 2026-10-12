@@ -193,7 +193,8 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
       subtitle:
           'How many cores are used for inference. More threads speed up '
           'prompt processing but can slow down token generation, which is '
-          'memory-bandwidth-bound. $current is a safe starting point.',
+          'memory-bandwidth-bound. $current is a safe starting point. '
+          'Max 8 threads supported.',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -224,8 +225,8 @@ class _PerformanceScreenState extends ConsumerState<PerformanceScreen> {
           Slider(
             value: current.toDouble(),
             min: 1,
-            max: 4,
-            divisions: 3,
+            max: 8,
+            divisions: 7,
             label: '$current',
             onChanged: (v) {
               ref
