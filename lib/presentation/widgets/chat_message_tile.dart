@@ -140,7 +140,10 @@ class _ChatMessageTileState extends State<ChatMessageTile>
                 ),
                 const Spacer(),
                 if (_hasTime)
-                  Text(_formatTime(widget.message.timestamp), style: text.labelSmall),
+                  Text(
+                    _formatTime(widget.message.timestamp),
+                    style: text.labelSmall,
+                  ),
               ],
             ),
           if (!isUser) const SizedBox(height: 6),

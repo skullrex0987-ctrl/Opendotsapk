@@ -133,6 +133,34 @@ const Map<String, ModelIntegrity> modelIntegrityManifest = {
       ),
     },
   ),
+  // SmolVLM-500M — smallest vision model; Q4_K_M keeps it under 500 MB total.
+  'smolvlm-500m-instruct-q4_k_m': ModelIntegrity(
+    commitSha: '4c1ae1b9c70b72e7064e350f705883abf492d392',
+    files: {
+      'SmolVLM-500M-Instruct-Q4_K_M.gguf': FileIntegrity(
+        303251712,
+        '0036ee911a27da7d039e084f2d2c32b9976c81d9dde8945811ed589a3099bca8',
+      ),
+      'mmproj-SmolVLM-500M-Instruct-f16.gguf': FileIntegrity(
+        199468864,
+        'a361f1d5248b7569e3ad8703b8f42b18937a60d8871baf876dda182d29ec1a72',
+      ),
+    },
+  ),
+  // InternVL2.5-1B — good vision quality at ~1.1 GB total (Q4_K_M).
+  'internvl2_5-1b-q4_k_m': ModelIntegrity(
+    commitSha: '1cfc92b0d2a4f2394c757606103aa5c010b31e7f',
+    files: {
+      'InternVL2_5-1B.Q4_K_M.gguf': FileIntegrity(
+        490984416,
+        '4c20ea78f1b3e5eb19ce6dbfdcf9ec717d6643e995de06d9632fcb751f30d0a7',
+      ),
+      'InternVL2_5-1B.mmproj-f16.gguf': FileIntegrity(
+        619876960,
+        '0c672edd99ec0b99df01c75dbb6cc26ad2236d7d61f908c93b5fda9b4d9ddd20',
+      ),
+    },
+  ),
   'moondream2-q5k': ModelIntegrity(
     commitSha: '8abde7e79de0c3bbbfeb29827ef594f36bc5fe67',
     files: {
@@ -764,6 +792,19 @@ class ModelManager {
     if (await activeLlmId() == m.id) await setActiveLlmId(null);
     if (await activeVisionId() == m.id) await setActiveVisionId(null);
     if (await activeEmbeddingId() == m.id) await setActiveEmbeddingId(null);
+    // Also remove from multi-selection lists if present.
+    final llmIds = await activeLlmIds();
+    if (llmIds.contains(m.id)) {
+      await setActiveLlmIds(llmIds.where((id) => id != m.id).toList());
+    }
+    final visionIds = await activeVisionIds();
+    if (visionIds.contains(m.id)) {
+      await setActiveVisionIds(visionIds.where((id) => id != m.id).toList());
+    }
+    final embedIds = await activeEmbeddingIds();
+    if (embedIds.contains(m.id)) {
+      await setActiveEmbeddingIds(embedIds.where((id) => id != m.id).toList());
+    }
   }
 
   /// Download a model, emitting progress until complete.
@@ -1139,6 +1180,22 @@ class ModelManager {
     }
   }
 
+  Future<List<String>> activeLlmIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getStringList(AppConstants.prefActiveLlmIds);
+    return raw ?? [];
+  }
+
+  Future<void> setActiveLlmIds(List<String?> ids) async {
+    final prefs = await SharedPreferences.getInstance();
+    final cleaned = ids.whereType<String>().toList();
+    if (cleaned.isEmpty) {
+      await prefs.remove(AppConstants.prefActiveLlmIds);
+    } else {
+      await prefs.setStringList(AppConstants.prefActiveLlmIds, cleaned);
+    }
+  }
+
   Future<String?> activeVisionId() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(AppConstants.prefActiveVisionId);
@@ -1153,6 +1210,22 @@ class ModelManager {
     }
   }
 
+  Future<List<String>> activeVisionIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getStringList(AppConstants.prefActiveVisionIds);
+    return raw ?? [];
+  }
+
+  Future<void> setActiveVisionIds(List<String?> ids) async {
+    final prefs = await SharedPreferences.getInstance();
+    final cleaned = ids.whereType<String>().toList();
+    if (cleaned.isEmpty) {
+      await prefs.remove(AppConstants.prefActiveVisionIds);
+    } else {
+      await prefs.setStringList(AppConstants.prefActiveVisionIds, cleaned);
+    }
+  }
+
   Future<String?> activeEmbeddingId() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(AppConstants.prefActiveEmbeddingId);
@@ -1164,6 +1237,22 @@ class ModelManager {
       await prefs.remove(AppConstants.prefActiveEmbeddingId);
     } else {
       await prefs.setString(AppConstants.prefActiveEmbeddingId, id);
+    }
+  }
+
+  Future<List<String>> activeEmbeddingIds() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getStringList(AppConstants.prefActiveEmbeddingIds);
+    return raw ?? [];
+  }
+
+  Future<void> setActiveEmbeddingIds(List<String?> ids) async {
+    final prefs = await SharedPreferences.getInstance();
+    final cleaned = ids.whereType<String>().toList();
+    if (cleaned.isEmpty) {
+      await prefs.remove(AppConstants.prefActiveEmbeddingIds);
+    } else {
+      await prefs.setStringList(AppConstants.prefActiveEmbeddingIds, cleaned);
     }
   }
 
@@ -1183,12 +1272,25 @@ class ModelManager {
   ///    default is the last resort, and the caller then reports it honestly
   ///    rather than pretending the selection took.
   Future<LocalModel> activeLlm() async {
-    final id = await activeLlmId();
-    Log.d('ModelManager.activeLlm: prefActiveLlmId = $id');
-    final m = ModelCatalog.byId(id);
-    if (m != null && ModelCatalog.isChatCapable(m) && await isInstalled(m)) {
-      Log.d('ModelManager.activeLlm: returning selected model ${m.id}');
-      return m;
+    final ids = await activeLlmIds();
+    Log.d('ModelManager.activeLlm: prefActiveLlmIds = $ids');
+    for (final id in ids) {
+      final m = ModelCatalog.byId(id);
+      if (m != null && ModelCatalog.isChatCapable(m) && await isInstalled(m)) {
+        Log.d('ModelManager.activeLlm: returning selected model ${m.id}');
+        return m;
+      }
+    }
+    // fallback to single legacy key
+    final legacyId = await activeLlmId();
+    if (legacyId != null) {
+      final m = ModelCatalog.byId(legacyId);
+      if (m != null && ModelCatalog.isChatCapable(m) && await isInstalled(m)) {
+        Log.d(
+          'ModelManager.activeLlm: returning legacy selected model ${m.id}',
+        );
+        return m;
+      }
     }
     Log.d(
       'ModelManager.activeLlm: selected model not found/not installed, checking installed llms',
@@ -1209,9 +1311,17 @@ class ModelManager {
 
   /// The active vision model, or null when none is installed/selected.
   Future<LocalModel?> activeVision() async {
-    final id = await activeVisionId();
-    final m = ModelCatalog.byId(id);
-    if (m != null && m.isVision && await isInstalled(m)) return m;
+    final ids = await activeVisionIds();
+    for (final id in ids) {
+      final m = ModelCatalog.byId(id);
+      if (m != null && m.isVision && await isInstalled(m)) return m;
+    }
+    // fallback to legacy single key
+    final legacyId = await activeVisionId();
+    if (legacyId != null) {
+      final m = ModelCatalog.byId(legacyId);
+      if (m != null && m.isVision && await isInstalled(m)) return m;
+    }
     return null;
   }
 
@@ -1220,9 +1330,17 @@ class ModelManager {
   /// Deliberately no fallback: Memory search must be *off* rather than
   /// silently producing hash-token garbage when the encoder is absent.
   Future<LocalModel?> activeEmbedding() async {
-    final id = await activeEmbeddingId();
-    final m = ModelCatalog.byId(id);
-    if (m != null && m.isEmbedding && await isInstalled(m)) return m;
+    final ids = await activeEmbeddingIds();
+    for (final id in ids) {
+      final m = ModelCatalog.byId(id);
+      if (m != null && m.isEmbedding && await isInstalled(m)) return m;
+    }
+    // fallback to legacy single key
+    final legacyId = await activeEmbeddingId();
+    if (legacyId != null) {
+      final m = ModelCatalog.byId(legacyId);
+      if (m != null && m.isEmbedding && await isInstalled(m)) return m;
+    }
     return null;
   }
 }

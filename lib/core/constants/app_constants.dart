@@ -55,6 +55,11 @@ class AppConstants {
   static const String prefActiveVisionId = 'active_vision_id';
   static const String prefActiveEmbeddingId = 'active_embedding_id';
 
+  /// Keys for multi-model selection (list of ids)
+  static const String prefActiveLlmIds = 'active_llm_ids';
+  static const String prefActiveVisionIds = 'active_vision_ids';
+  static const String prefActiveEmbeddingIds = 'active_embedding_ids';
+
   // --------------------------------------------------------- inference settings
   static const int defaultContextSize = 2048;
   static const List<int> contextSizes = [1024, 2048, 4096];

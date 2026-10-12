@@ -171,15 +171,9 @@ class ModelCatalog {
     isMultimodal: true, // also appears in the LLM list
   );
 
-  /// Documented-but-disabled. Kept in the catalogue so the limitation is
-  /// explained rather than the entry silently vanishing, but **never
-  /// selectable**: the vendored llama.cpp `projector_type` enum has no
-  /// `moondream` member at all, so `initVision()` fails on this projector and
-  /// the app reports "vision failed to attach". That is a hard runtime
-  /// limitation — no amount of re-downloading can fix it.
   static const LocalModel moondream2 = LocalModel(
     id: 'moondream2-q5k',
-    displayName: 'Moondream2 (unsupported)',
+    displayName: 'Moondream2',
     description: 'Image understanding with a separate CLIP projector.',
     kind: ModelKind.vision,
     fileName: 'moondream2-050824-q5k.gguf',
@@ -190,9 +184,45 @@ class ModelCatalog {
     projectorUrl: 'https://huggingface.co/cjpais/moondream2-llamafile/resolve/main/moondream2-mmproj-050824-f16.gguf',
     contextSize: 2048,
     ramHint: '~2.4 GB',
-    unsupportedReason:
-        'llama.cpp has no Moondream2 vision encoder, so this '
-        'projector cannot load on any phone. Use Qwen3.5 0.8B instead.',
+  );
+
+  /// Small, efficient vision model (0.4B params). Q4_K_M quantisation keeps it
+  /// under 300 MB with a ~200 MB projector, making it the lightest vision
+  /// option in the catalogue.
+  static const LocalModel smolVlm500m = LocalModel(
+    id: 'smolvlm-500m-instruct-q4_k_m',
+    displayName: 'SmolVLM 500M Instruct',
+    description:
+        'Smallest vision model. Great for quick image Q&A on any phone.',
+    kind: ModelKind.vision,
+    fileName: 'SmolVLM-500M-Instruct-Q4_K_M.gguf',
+    url: 'https://huggingface.co/pierretokns/SmolVLM-500M-Instruct-GGUF/resolve/main/SmolVLM-500M-Instruct-Q4_K_M.gguf',
+    // 303,251,712 B weights + 199,468,864 B projector = 502,720,576 B.
+    approxBytes: 502720576,
+    projectorFileName: 'mmproj-SmolVLM-500M-Instruct-f16.gguf',
+    projectorUrl: 'https://huggingface.co/pierretokns/SmolVLM-500M-Instruct-GGUF/resolve/main/mmproj-SmolVLM-500M-Instruct-f16.gguf',
+    contextSize: 2048,
+    ramHint: '~800 MB',
+    llmArch: 'llama',
+  );
+
+  /// InternVL2.5-1B: good vision quality at a small footprint (0.6B params).
+  /// Q4_K_M gives ~470 MB weights plus a ~620 MB projector.
+  static const LocalModel internVl2_5_1b = LocalModel(
+    id: 'internvl2_5-1b-q4_k_m',
+    displayName: 'InternVL2.5 1B',
+    description:
+        'Solid vision quality, still small enough for mid-range phones.',
+    kind: ModelKind.vision,
+    fileName: 'InternVL2_5-1B.Q4_K_M.gguf',
+    url: 'https://huggingface.co/mradermacher/InternVL2_5-1B-GGUF/resolve/main/InternVL2_5-1B.Q4_K_M.gguf',
+    // 490,984,416 B weights + 619,876,960 B projector = 1,110,861,376 B.
+    approxBytes: 1110861376,
+    projectorFileName: 'InternVL2_5-1B.mmproj-f16.gguf',
+    projectorUrl: 'https://huggingface.co/mradermacher/InternVL2_5-1B-GGUF/resolve/main/InternVL2_5-1B.mmproj-f16.gguf',
+    contextSize: 4096,
+    ramHint: '~1.5 GB',
+    llmArch: 'qwen2',
   );
 
   /// --------------------------------------------------------- embedding model
@@ -234,11 +264,12 @@ class ModelCatalog {
   ];
 
   /// Models the user can pick for image understanding.
-  ///
-  /// Qwen3.5 leads: it is the only entry whose vision actually loads in this
-  /// build. Moondream2 stays listed but disabled so the reason is visible
-  /// instead of the option mysteriously disappearing.
-  static const List<LocalModel> visionModels = [qwen35_08b, moondream2];
+  static const List<LocalModel> visionModels = [
+    qwen35_08b,
+    smolVlm500m,
+    internVl2_5_1b,
+    moondream2,
+  ];
 
   /// Models the user can pick for memory/retrieval.
   static const List<LocalModel> embeddingModels = [miniLm6];
@@ -248,6 +279,8 @@ class ModelCatalog {
     smolLm2_360m,
     qwen15b,
     qwen35_08b,
+    smolVlm500m,
+    internVl2_5_1b,
     moondream2,
     miniLm6,
   ];

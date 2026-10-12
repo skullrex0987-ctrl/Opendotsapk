@@ -43,9 +43,18 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
   final Map<String, double> _progress = {};
   final Set<String> _busy = {};
 
+  /// modelId -> whether it is fully on disk. Cached from [ModelManager.isInstalled].
+  final Map<String, bool> _installed = {};
+
+  /// Single-selection state (legacy)
   String? _activeLlm;
   String? _activeVision;
   String? _activeEmbedding;
+
+  /// Multi-selection state (new)
+  List<String> _multiLlmIds = [];
+  List<String> _multiVisionIds = [];
+  List<String> _multiEmbeddingIds = [];
 
   int _storageBytes = 0;
 
@@ -61,6 +70,19 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
     super.initState();
     _loadSelection();
     _loadStorage();
+    _loadInstalled();
+  }
+
+  Future<void> _loadInstalled() async {
+    final results = await Future.wait(
+      ModelCatalog.all.map((m) async => (m.id, await _manager.isInstalled(m))),
+    );
+    if (!mounted) return;
+    setState(() {
+      for (final r in results) {
+        _installed[r.$1] = r.$2;
+      }
+    });
   }
 
   Future<void> _loadStorage() async {
@@ -85,18 +107,31 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
   }
 
   Future<void> _loadSelection() async {
-    // `Future.wait` returns the list of results, not a single String?, so the
-    // await has to be on the awaited list itself.
-    final List<String?> ids = await Future.wait<String?>([
-      _manager.activeLlmId(),
-      _manager.activeVisionId(),
-      _manager.activeEmbeddingId(),
+    // Load both single and multi selection
+    final List<dynamic> results = await Future.wait([
+      Future.wait<String?>([
+        _manager.activeLlmId(),
+        _manager.activeVisionId(),
+        _manager.activeEmbeddingId(),
+      ]),
+      Future.wait<List<String>>([
+        _manager.activeLlmIds(),
+        _manager.activeVisionIds(),
+        _manager.activeEmbeddingIds(),
+      ]),
     ]);
+
+    final List<String?> ids = results[0] as List<String?>;
+    final List<List<String>> multiLists = results[1] as List<List<String>>;
+
     if (!mounted) return;
     setState(() {
       _activeLlm = ids[0];
       _activeVision = ids[1];
       _activeEmbedding = ids[2];
+      _multiLlmIds = multiLists[0];
+      _multiVisionIds = multiLists[1];
+      _multiEmbeddingIds = multiLists[2];
     });
   }
 
@@ -117,6 +152,49 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
         break;
       case ModelKind.embedding:
         await _manager.setActiveEmbeddingId(installed ? m.id : null);
+        break;
+    }
+    await _loadSelection();
+  }
+
+  /// Toggle [m] in the multi-selection list for [section].
+  ///
+  /// If the model is already selected, remove it; otherwise add it.
+  Future<void> _toggleMultiSelect(
+    LocalModel m,
+    bool installed,
+    ModelKind section,
+  ) async {
+    if (!installed) return;
+
+    List<String> current;
+    switch (section) {
+      case ModelKind.llm:
+        current = List.from(_multiLlmIds);
+        break;
+      case ModelKind.vision:
+        current = List.from(_multiVisionIds);
+        break;
+      case ModelKind.embedding:
+        current = List.from(_multiEmbeddingIds);
+        break;
+    }
+
+    if (current.contains(m.id)) {
+      current.remove(m.id);
+    } else {
+      current.add(m.id);
+    }
+
+    switch (section) {
+      case ModelKind.llm:
+        await _manager.setActiveLlmIds(current);
+        break;
+      case ModelKind.vision:
+        await _manager.setActiveVisionIds(current);
+        break;
+      case ModelKind.embedding:
+        await _manager.setActiveEmbeddingIds(current);
         break;
     }
     await _loadSelection();
@@ -152,9 +230,11 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
               return;
             }
             if (p.done) {
+              _installed[m.id] = true;
               finish();
               // Selecting straight after a successful download saves a tap.
               _select(m, true, section);
+              _toggleMultiSelect(m, true, section);
               _loadStorage();
               _toast('${m.displayName} installed');
             }
@@ -181,7 +261,38 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
     final scheme = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Models')),
+      appBar: AppBar(
+        title: const Text('Models'),
+        actions: [
+          // Show how many models are selected across all categories
+          if (_multiLlmIds.isNotEmpty ||
+              _multiVisionIds.isNotEmpty ||
+              _multiEmbeddingIds.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: Tooltip(
+                message: 'Total selected models',
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: scheme.primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${_multiLlmIds.length + _multiVisionIds.length + _multiEmbeddingIds.length}',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: scheme.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.only(bottom: 32),
         children: [
@@ -191,48 +302,248 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
             _firstRunCard(),
           ],
           const SizedBox(height: 8),
-          const _SectionHeader(
-            title: 'Chat model',
-            subtitle:
-                'The brain. Pick one — download it, then it is selected '
-                'automatically. Needs ~600 MB RAM.',
+          _sectionHeader(
+            'Chat model',
+            'The brain. Tap to select one or more models. Needs ~600 MB RAM each.',
+            _multiLlmIds,
           ),
           ...ModelCatalog.llms.map(
-            (m) => _row(m, selectedId: _activeLlm, section: ModelKind.llm),
+            (m) => _row(
+              m,
+              selectedId: _activeLlm,
+              multiIds: _multiLlmIds,
+              section: ModelKind.llm,
+            ),
           ),
           const Divider(height: 32),
-          const _SectionHeader(
-            title: 'Vision model',
-            subtitle:
-                'Lets the agent read pictures. Qwen3.5 has vision built '
-                'in, so one download is enough — it chats and sees. Any entry '
-                'greyed out is not supported by this build\'s llama.cpp.',
+          _sectionHeader(
+            'Vision model',
+            'Lets the agent read pictures. Qwen3.5 has vision built in, so one download is enough — it chats and sees. Any entry greyed out is not supported by this build\'s llama.cpp.',
+            _multiVisionIds,
           ),
           ...ModelCatalog.visionModels.map(
             (m) => _row(
               m,
               selectedId: _activeVision,
+              multiIds: _multiVisionIds,
               section: ModelKind.vision,
               usable: ModelCatalog.isUsable(m),
             ),
           ),
           const Divider(height: 32),
-          const _SectionHeader(
-            title: 'Embeddings',
-            subtitle:
-                'Powers Memory search. Without it, past conversations '
-                'are stored but never retrieved.',
+          _sectionHeader(
+            'Embeddings',
+            'Powers Memory search. Without it, past conversations are stored but never retrieved.',
+            _multiEmbeddingIds,
           ),
           ...ModelCatalog.embeddingModels.map(
             (m) => _row(
               m,
               selectedId: _activeEmbedding,
+              multiIds: _multiEmbeddingIds,
               section: ModelKind.embedding,
             ),
           ),
+          if (_multiLlmIds.isNotEmpty ||
+              _multiVisionIds.isNotEmpty ||
+              _multiEmbeddingIds.isNotEmpty)
+            ..._selectedModelsList(theme, scheme),
         ],
       ),
     );
+  }
+
+  Widget _sectionHeader(
+    String title,
+    String subtitle,
+    List<String> selectedIds,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 3),
+                Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+              ],
+            ),
+          ),
+          if (selectedIds.length > 1)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: AppColors.success.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.layers, size: 13, color: AppColors.success),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${selectedIds.length}',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: AppColors.success,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _selectedModelsList(ThemeData theme, ColorScheme scheme) {
+    final allSelected = <LocalModel>[];
+    for (final id in _multiLlmIds) {
+      final m = ModelCatalog.byId(id);
+      if (m != null) allSelected.add(m);
+    }
+    for (final id in _multiVisionIds) {
+      final m = ModelCatalog.byId(id);
+      if (m != null) allSelected.add(m);
+    }
+    for (final id in _multiEmbeddingIds) {
+      final m = ModelCatalog.byId(id);
+      if (m != null) allSelected.add(m);
+    }
+
+    if (allSelected.isEmpty) return [];
+
+    return [
+      const SizedBox(height: 16),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+        child: Text(
+          'Selected Models',
+          style: theme.textTheme.titleSmall?.copyWith(
+            color: scheme.primary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+      ...allSelected.map((m) {
+        bool isSelectedInLlm = _multiLlmIds.contains(m.id);
+        bool isSelectedInVision = _multiVisionIds.contains(m.id);
+        bool isSelectedInEmbedding = _multiEmbeddingIds.contains(m.id);
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          child: Card(
+            color: scheme.primary.withValues(alpha: 0.08),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+              side: BorderSide(
+                color: scheme.primary.withValues(alpha: 0.3),
+                width: 1,
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Icon(
+                    m.kind == ModelKind.embedding
+                        ? Icons.dns_outlined
+                        : m.kind == ModelKind.vision
+                        ? Icons.visibility_outlined
+                        : Icons.psychology_outlined,
+                    color: AppColors.accent,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          m.displayName,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            if (isSelectedInLlm) ...[
+                              _roleChip('LLM', scheme),
+                              const SizedBox(width: 4),
+                            ],
+                            if (isSelectedInVision) ...[
+                              _roleChip('Vision', scheme),
+                              const SizedBox(width: 4),
+                            ],
+                            if (isSelectedInEmbedding) ...[
+                              _roleChip('Embed', scheme),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 18),
+                    onPressed: () async {
+                      await _removeFromMultiSelect(m, ModelKind.llm);
+                      await _removeFromMultiSelect(m, ModelKind.vision);
+                      await _removeFromMultiSelect(m, ModelKind.embedding);
+                    },
+                    tooltip: 'Remove from selection',
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }),
+    ];
+  }
+
+  Widget _roleChip(String label, ColorScheme scheme) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: scheme.primary.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        label,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: scheme.primary,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _removeFromMultiSelect(LocalModel m, ModelKind section) async {
+    switch (section) {
+      case ModelKind.llm:
+        if (!_multiLlmIds.contains(m.id)) return;
+        await _manager.setActiveLlmIds(
+          _multiLlmIds.where((id) => id != m.id).toList(),
+        );
+        break;
+      case ModelKind.vision:
+        if (!_multiVisionIds.contains(m.id)) return;
+        await _manager.setActiveVisionIds(
+          _multiVisionIds.where((id) => id != m.id).toList(),
+        );
+        break;
+      case ModelKind.embedding:
+        if (!_multiEmbeddingIds.contains(m.id)) return;
+        await _manager.setActiveEmbeddingIds(
+          _multiEmbeddingIds.where((id) => id != m.id).toList(),
+        );
+        break;
+    }
+    if (mounted) await _loadSelection();
   }
 
   /// Storage used, plus the fact that models live on the device.
@@ -305,50 +616,50 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
   Widget _row(
     LocalModel m, {
     required String? selectedId,
+    required List<String> multiIds,
     required ModelKind section,
     bool usable = true,
   }) {
-    return FutureBuilder<bool>(
-      future: _manager.isInstalled(m),
-      builder: (context, snap) {
-        final installed = snap.data ?? false;
-        final selected = installed && selectedId == m.id;
-        final busy = _busy.contains(m.id);
-        final progress = _progress[m.id];
+    final installed = _installed[m.id] ?? false;
+    final selected = installed && selectedId == m.id;
+    final busy = _busy.contains(m.id);
+    final progress = _progress[m.id];
 
-        if (snap.connectionState == ConnectionState.waiting) {
-          return _ModelRowShell(child: const _RowSkeleton());
-        }
-
-        return _ModelRowShell(
-          child: _ModelRow(
-            model: m,
-            installed: installed,
-            selected: selected,
-            usable: usable,
-            busy: busy,
-            progress: progress,
-            onDelete: () async {
-              await _manager.delete(m);
-              await _loadSelection();
-              await _loadStorage();
-              if (mounted) {
-                setState(() {});
-                _toast('${m.displayName} deleted');
-              }
-            },
-            onDownload: () => _download(m, section),
-            onSelect: () async {
-              if (!installed) {
-                await _download(m, section);
-              } else {
-                await _select(m, true, section);
-                if (mounted) setState(() {});
-              }
-            },
-          ),
-        );
-      },
+    return _ModelRowShell(
+      child: _ModelRow(
+        model: m,
+        installed: installed,
+        selected: selected,
+        multiSelected: multiIds.contains(m.id),
+        usable: usable,
+        busy: busy,
+        progress: progress,
+        onDelete: () async {
+          await _manager.delete(m);
+          _installed[m.id] = false;
+          await _loadSelection();
+          await _loadStorage();
+          if (mounted) {
+            setState(() {});
+            _toast('${m.displayName} deleted');
+          }
+        },
+        onDownload: () => _download(m, section),
+        onSelect: () async {
+          if (!installed) {
+            await _download(m, section);
+          } else {
+            await _select(m, true, section);
+            await _toggleMultiSelect(m, true, section);
+            if (mounted) setState(() {});
+          }
+        },
+        onToggleMulti: () async {
+          if (installed) {
+            await _toggleMultiSelect(m, true, section);
+          }
+        },
+      ),
     );
   }
 }
@@ -400,70 +711,33 @@ class _ModelRowShell extends StatelessWidget {
   }
 }
 
-/// Placeholder shown while [ModelManager.isInstalled] stats the files.
-///
-/// A shimmer was the obvious choice and is the wrong one here: the check is a
-/// handful of `File.length()` calls that resolve in well under a frame, so a
-/// 400 ms shimmer would outlive the answer and read as a stutter.
-class _RowSkeleton extends StatelessWidget {
-  const _RowSkeleton();
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final bar = scheme.surfaceContainerHighest;
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Row(
-          children: [
-            Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(color: bar, shape: BoxShape.circle),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(height: 12, color: bar),
-                  const SizedBox(height: 8),
-                  Container(height: 10, width: 140, color: bar),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 /// One model row: identity, state, and the controls that change it.
 class _ModelRow extends StatelessWidget {
   const _ModelRow({
     required this.model,
     required this.installed,
     required this.selected,
+    required this.multiSelected,
     required this.usable,
     required this.busy,
     required this.progress,
     required this.onDelete,
     required this.onDownload,
     required this.onSelect,
+    required this.onToggleMulti,
   });
 
   final LocalModel model;
   final bool installed;
   final bool selected;
+  final bool multiSelected;
   final bool usable;
   final bool busy;
   final double? progress;
   final VoidCallback onDelete;
   final VoidCallback onDownload;
   final VoidCallback onSelect;
+  final VoidCallback onToggleMulti;
 
   @override
   Widget build(BuildContext context) {
@@ -471,13 +745,13 @@ class _ModelRow extends StatelessWidget {
     final scheme = theme.colorScheme;
 
     return Card(
-      color: selected
+      color: selected || multiSelected
           ? scheme.primary.withValues(alpha: 0.10)
           : AppColors.surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
         side: BorderSide(
-          color: selected
+          color: (selected || multiSelected)
               ? scheme.primary.withValues(alpha: 0.55)
               : scheme.outlineVariant.withValues(alpha: 0.5),
         ),
@@ -496,6 +770,7 @@ class _ModelRow extends StatelessWidget {
                   kind: model.kind,
                   usable: usable,
                   selected: selected,
+                  multiSelected: multiSelected,
                 ),
               ),
               const SizedBox(width: 12),
@@ -517,6 +792,7 @@ class _ModelRow extends StatelessWidget {
                     _StateBadge(
                       installed: installed,
                       selected: selected,
+                      multiSelected: multiSelected,
                       usable: usable,
                       busy: busy,
                     ),
@@ -556,6 +832,8 @@ class _ModelRow extends StatelessWidget {
                 usable: usable,
                 onDelete: onDelete,
                 onDownload: onDownload,
+                onToggleMulti: onToggleMulti,
+                multiSelected: multiSelected,
               ),
             ],
           ),
@@ -572,18 +850,20 @@ class _RoleIcon extends StatelessWidget {
     required this.kind,
     required this.usable,
     required this.selected,
+    required this.multiSelected,
   });
 
   final ModelKind kind;
   final bool usable;
   final bool selected;
+  final bool multiSelected;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final tint = !usable
         ? scheme.onSurfaceVariant
-        : selected
+        : selected || multiSelected
         ? scheme.primary
         : kind == ModelKind.embedding
         ? AppColors.accent
@@ -649,12 +929,14 @@ class _StateBadge extends StatelessWidget {
   const _StateBadge({
     required this.installed,
     required this.selected,
+    required this.multiSelected,
     required this.usable,
     required this.busy,
   });
 
   final bool installed;
   final bool selected;
+  final bool multiSelected;
   final bool usable;
   final bool busy;
 
@@ -674,6 +956,10 @@ class _StateBadge extends StatelessWidget {
       label = 'Downloading';
       tint = AppColors.accent;
       icon = Icons.downloading;
+    } else if (multiSelected) {
+      label = 'Multi-selected';
+      tint = AppColors.success;
+      icon = Icons.check_circle;
     } else if (selected) {
       label = 'Selected';
       tint = AppColors.success;
@@ -772,6 +1058,8 @@ class _RowActions extends StatelessWidget {
     required this.usable,
     required this.onDelete,
     required this.onDownload,
+    required this.onToggleMulti,
+    required this.multiSelected,
   });
 
   final bool busy;
@@ -779,6 +1067,8 @@ class _RowActions extends StatelessWidget {
   final bool usable;
   final VoidCallback onDelete;
   final VoidCallback onDownload;
+  final VoidCallback onToggleMulti;
+  final bool multiSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -794,10 +1084,23 @@ class _RowActions extends StatelessWidget {
     }
 
     if (installed) {
-      return IconButton(
-        tooltip: 'Delete',
-        icon: const Icon(Icons.delete_outline),
-        onPressed: onDelete,
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            tooltip: multiSelected ? 'Deselect' : 'Select',
+            icon: Icon(
+              multiSelected ? Icons.check_circle : Icons.add_circle_outline,
+              size: 20,
+            ),
+            onPressed: onToggleMulti,
+          ),
+          IconButton(
+            tooltip: 'Delete',
+            icon: const Icon(Icons.delete_outline),
+            onPressed: onDelete,
+          ),
+        ],
       );
     }
 
