@@ -472,15 +472,15 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
                         Row(
                           children: [
                             if (isSelectedInLlm) ...[
-                              _roleChip('LLM', scheme),
+                              _roleChip('LLM', scheme, theme.textTheme),
                               const SizedBox(width: 4),
                             ],
                             if (isSelectedInVision) ...[
-                              _roleChip('Vision', scheme),
+                              _roleChip('Vision', scheme, theme.textTheme),
                               const SizedBox(width: 4),
                             ],
                             if (isSelectedInEmbedding) ...[
-                              _roleChip('Embed', scheme),
+                              _roleChip('Embed', scheme, theme.textTheme),
                             ],
                           ],
                         ),
@@ -505,7 +505,7 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
     ];
   }
 
-  Widget _roleChip(String label, ColorScheme scheme) {
+  Widget _roleChip(String label, ColorScheme scheme, TextTheme text) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
@@ -514,7 +514,7 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
       ),
       child: Text(
         label,
-        style: theme.textTheme.labelSmall?.copyWith(
+        style: text.labelSmall?.copyWith(
           color: scheme.primary,
           fontWeight: FontWeight.w500,
         ),
