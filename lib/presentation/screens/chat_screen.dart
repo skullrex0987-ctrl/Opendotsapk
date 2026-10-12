@@ -99,73 +99,89 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final hasModel = modelPath != null && modelPath.trim().isNotEmpty;
 
     return Scaffold(
-      body: Column(
-        children: [
-          _ChatHeader(
-            modelPath: modelPath,
-            isGenerating: _isThinking,
-            onManageModels: _showModelSelector,
-            onClear: _clearChat,
-            onExport: _exportChat,
-          ),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: hasModel
+              ? LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    AppColors.background,
+                    AppColors.background.withValues(alpha: 0.95),
+                    AppColors.background,
+                  ],
+                  stops: const [0.0, 0.3, 1.0],
+                )
+              : null,
+        ),
+        child: Column(
+          children: [
+            _ChatHeader(
+              modelPath: modelPath,
+              isGenerating: _isThinking,
+              onManageModels: _showModelSelector,
+              onClear: _clearChat,
+              onExport: _exportChat,
+            ),
 
-          // Messages list
-          Expanded(
-            child: messages.isEmpty
-                ? ChatEmptyState(
-                    modelLoaded: hasModel,
-                    onManageModels: _showModelSelector,
-                    onSuggestion: _fillComposer,
-                  )
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                    itemCount: messages.length + (_isThinking ? 1 : 0),
-                    itemBuilder: (context, index) {
-                      if (index == messages.length && _isThinking) {
-                        return const ThinkingBubble();
-                      }
-                      // Reversed on purpose: the newest message belongs at the
-                      // top, and with the composer pinned to the bottom this
-                      // is what makes "scroll to the latest" a no-op instead
-                      // of a jump to the far end.
-                      final message = messages[messages.length - 1 - index];
-                      return FadeSlideIn(
-                        // Stagger capped hard: the index runs newest-first, so
-                        // without a cap the fifth item of a long transcript
-                        // would still be waiting 500 ms and the hundredth
-                        // five seconds. Five steps covers every message that
-                        // is actually on screen at insertion time.
-                        delay: Duration(
-                          milliseconds: (index > 5 ? 5 : index) * 50,
-                        ),
-                        child: ChatMessageTile(message: message),
-                      );
-                    },
-                  ),
-          ),
+            // Messages list
+            Expanded(
+              child: messages.isEmpty
+                  ? ChatEmptyState(
+                      modelLoaded: hasModel,
+                      onManageModels: _showModelSelector,
+                      onSuggestion: _fillComposer,
+                    )
+                  : ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                      itemCount: messages.length + (_isThinking ? 1 : 0),
+                      itemBuilder: (context, index) {
+                        if (index == messages.length && _isThinking) {
+                          return const ThinkingBubble();
+                        }
+                        // Reversed on purpose: the newest message belongs at the
+                        // top, and with the composer pinned to the bottom this
+                        // is what makes "scroll to the latest" a no-op instead
+                        // of a jump to the far end.
+                        final message = messages[messages.length - 1 - index];
+                        return FadeSlideIn(
+                          // Stagger capped hard: the index runs newest-first, so
+                          // without a cap the fifth item of a long transcript
+                          // would still be waiting 500 ms and the hundredth
+                          // five seconds. Five steps covers every message that
+                          // is actually on screen at insertion time.
+                          delay: Duration(
+                            milliseconds: (index > 5 ? 5 : index) * 50,
+                          ),
+                          child: ChatMessageTile(message: message),
+                        );
+                      },
+                    ),
+            ),
 
-          // Attachment previews
-          if (_attachedImages.isNotEmpty || _attachedDocs.isNotEmpty)
-            _buildAttachmentStrip(),
+            // Attachment previews
+            if (_attachedImages.isNotEmpty || _attachedDocs.isNotEmpty)
+              _buildAttachmentStrip(),
 
-          // Route badge: say plainly where the last turn ran.
-          if (_lastRoute != null) _buildRouteBadge(),
+            // Route badge: say plainly where the last turn ran.
+            if (_lastRoute != null) _buildRouteBadge(),
 
-          ChatComposer(
-            controller: _controller,
-            focusNode: _composerFocus,
-            isGenerating: _isThinking,
-            onSend: _sendMessage,
-            onStop: _stopGeneration,
-            onAttachImage: _pickImage,
-            onAttachDocument: _pickDocument,
-            onVoice: _startVoiceInput,
-            imageTooltip: 'Attach an image (needs a vision model)',
-            documentTooltip:
-                'Attach a document: ${DocumentService.supportedSummary}',
-          ),
-        ],
+            ChatComposer(
+              controller: _controller,
+              focusNode: _composerFocus,
+              isGenerating: _isThinking,
+              onSend: _sendMessage,
+              onStop: _stopGeneration,
+              onAttachImage: _pickImage,
+              onAttachDocument: _pickDocument,
+              onVoice: _startVoiceInput,
+              imageTooltip: 'Attach an image (needs a vision model)',
+              documentTooltip:
+                  'Attach a document: ${DocumentService.supportedSummary}',
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -894,7 +910,7 @@ String _modelDisplayName(String path) {
 /// the same Model Management sheet the old overflow menu's "Select Model" item
 /// did, promoted to a single tap because "what am I running" and "change what
 /// I'm running" are the same question asked constantly.
-class _ChatHeader extends StatelessWidget {
+class _ChatHeader extends StatefulWidget {
   const _ChatHeader({
     required this.modelPath,
     required this.isGenerating,
@@ -910,79 +926,208 @@ class _ChatHeader extends StatelessWidget {
   final VoidCallback onExport;
 
   @override
+  State<_ChatHeader> createState() => _ChatHeaderState();
+}
+
+class _ChatHeaderState extends State<_ChatHeader>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 300),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final path = modelPath;
+    final path = widget.modelPath;
     final loaded = path != null && path.trim().isNotEmpty;
 
-    return Container(
-      color: AppColors.background,
-      child: SafeArea(
-        bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
-          child: Row(
-            children: [
-              Container(
-                width: 30,
-                height: 30,
-                decoration: BoxDecoration(
-                  color: AppColors.brand.withValues(alpha: 0.16),
-                  borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-                ),
-                child: const Icon(
-                  Icons.psychology,
-                  size: 18,
-                  color: AppColors.brand,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Text('LocalMind', style: Theme.of(context).textTheme.titleLarge),
-              const Spacer(),
-              ChatStatusChip(
-                loaded: loaded,
-                label: loaded
-                    ? _modelDisplayName(path)
-                    : (isGenerating ? 'Working…' : 'No model loaded'),
-                onTap: onManageModels,
-              ),
-              const SizedBox(width: 4),
-              IconButton(
-                icon: const Icon(Icons.clear_all),
-                onPressed: onClear,
-                tooltip: 'Clear Chat',
-                iconSize: 20,
-                splashRadius: 20,
-                constraints: const BoxConstraints.tightFor(
-                  width: 38,
-                  height: 38,
-                ),
-                padding: EdgeInsets.zero,
-                color: scheme.onSurfaceVariant,
-              ),
-              // Kept as an overflow so Export stays reachable on narrow
-              // phones without displacing the status chip.
-              PopupMenuButton<String>(
-                onSelected: (value) {
-                  if (value == 'model') onManageModels();
-                  if (value == 'export') onExport();
-                },
-                itemBuilder: (context) => const [
-                  PopupMenuItem(value: 'model', child: Text('Select Model')),
-                  PopupMenuItem(value: 'export', child: Text('Export chat')),
-                ],
-                tooltip: 'More',
-                iconSize: 20,
-                icon: Icon(Icons.more_vert, color: scheme.onSurfaceVariant),
-                padding: EdgeInsets.zero,
-                // No `constraints` here on purpose: on PopupMenuButton that
-                // parameter constrains the dropdown menu, not the button, and
-                // a tight width would collapse the menu itself.
-              ),
-            ],
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return FadeTransition(
+          opacity: CurvedAnimation(
+            parent: _controller,
+            curve: const Interval(0.0, 0.6, curve: Curves.easeOut),
           ),
-        ),
-      ),
+          child: SlideTransition(
+            position:
+                Tween<Offset>(
+                  begin: const Offset(0, -0.15),
+                  end: Offset.zero,
+                ).animate(
+                  CurvedAnimation(
+                    parent: _controller,
+                    curve: const Interval(0.0, 0.7, curve: Curves.easeOutCubic),
+                  ),
+                ),
+            child: Container(
+              color: AppColors.background,
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+                  child: Row(
+                    children: [
+                      ScaleTransition(
+                        scale: CurvedAnimation(
+                          parent: _controller,
+                          curve: const Interval(
+                            0.2,
+                            0.8,
+                            curve: Curves.easeOutBack,
+                          ),
+                        ),
+                        child: Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: AppColors.brand.withValues(alpha: 0.16),
+                            borderRadius: BorderRadius.circular(
+                              AppTheme.radiusSmall,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.brand.withValues(alpha: 0.2),
+                                blurRadius: 8,
+                                spreadRadius: 1,
+                              ),
+                            ],
+                          ),
+                          child: const Icon(
+                            Icons.psychology,
+                            size: 18,
+                            color: AppColors.brand,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      FadeTransition(
+                        opacity: CurvedAnimation(
+                          parent: _controller,
+                          curve: const Interval(
+                            0.3,
+                            1.0,
+                            curve: Curves.easeOut,
+                          ),
+                        ),
+                        child: Text(
+                          'LocalMind',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                      ),
+                      const Spacer(),
+                      ScaleTransition(
+                        scale: CurvedAnimation(
+                          parent: _controller,
+                          curve: const Interval(
+                            0.4,
+                            0.9,
+                            curve: Curves.easeOutBack,
+                          ),
+                        ),
+                        child: FadeTransition(
+                          opacity: CurvedAnimation(
+                            parent: _controller,
+                            curve: const Interval(
+                              0.4,
+                              1.0,
+                              curve: Curves.easeOut,
+                            ),
+                          ),
+                          child: ChatStatusChip(
+                            loaded: loaded,
+                            label: loaded
+                                ? _modelDisplayName(path)
+                                : (widget.isGenerating
+                                      ? 'Working…'
+                                      : 'No model loaded'),
+                            onTap: widget.onManageModels,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      ScaleTransition(
+                        scale: CurvedAnimation(
+                          parent: _controller,
+                          curve: const Interval(
+                            0.5,
+                            1.0,
+                            curve: Curves.easeOutBack,
+                          ),
+                        ),
+                        child: IconButton(
+                          icon: const Icon(Icons.clear_all),
+                          onPressed: widget.onClear,
+                          tooltip: 'Clear Chat',
+                          iconSize: 20,
+                          splashRadius: 20,
+                          constraints: const BoxConstraints.tightFor(
+                            width: 38,
+                            height: 38,
+                          ),
+                          padding: EdgeInsets.zero,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                      // Kept as an overflow so Export stays reachable on narrow
+                      // phones without displacing the status chip.
+                      ScaleTransition(
+                        scale: CurvedAnimation(
+                          parent: _controller,
+                          curve: const Interval(
+                            0.6,
+                            1.0,
+                            curve: Curves.easeOutBack,
+                          ),
+                        ),
+                        child: PopupMenuButton<String>(
+                          onSelected: (value) {
+                            if (value == 'model') widget.onManageModels();
+                            if (value == 'export') widget.onExport();
+                          },
+                          itemBuilder: (context) => const [
+                            PopupMenuItem(
+                              value: 'model',
+                              child: Text('Select Model'),
+                            ),
+                            PopupMenuItem(
+                              value: 'export',
+                              child: Text('Export chat'),
+                            ),
+                          ],
+                          tooltip: 'More',
+                          iconSize: 20,
+                          icon: Icon(
+                            Icons.more_vert,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                          padding: EdgeInsets.zero,
+                          // No `constraints` here on purpose: on PopupMenuButton that
+                          // parameter constrains the dropdown menu, not the button, and
+                          // a tight width would collapse the menu itself.
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -1006,13 +1151,24 @@ class ModelSelectorDialog extends ConsumerWidget {
           onPressed: () => _loadModelFromStorage(context, ref),
           child: const Text('From storage'),
         ),
+        const Spacer(),
         TextButton(
-          onPressed: () => _loadSelectedModels(context, ref),
-          child: const Text('Load'),
-        ),
-        FilledButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('Close'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+          ),
+          onPressed: () => _loadSelectedModels(context, ref),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.play_arrow_rounded, size: 18),
+              SizedBox(width: 6),
+              Text('Load'),
+            ],
+          ),
         ),
       ],
     );
@@ -1269,6 +1425,21 @@ class _ModelPickerBody extends ConsumerStatefulWidget {
   ConsumerState<_ModelPickerBody> createState() => _ModelPickerBodyState();
 }
 
+/// Status a model row can be in, driving its badge colour and icon.
+enum _ModelStatus {
+  /// Downloaded and currently bound in the native runtime.
+  loaded,
+
+  /// Downloaded and user-selected but not yet loaded into the runtime.
+  selectedPending,
+
+  /// Downloaded but not selected.
+  installed,
+
+  /// Not downloaded.
+  notInstalled,
+}
+
 class _ModelPickerBodyState extends ConsumerState<_ModelPickerBody> {
   final ModelManager _manager = ModelManager.getInstance();
 
@@ -1341,48 +1512,63 @@ class _ModelPickerBodyState extends ConsumerState<_ModelPickerBody> {
     }
   }
 
-  Widget _row(LocalModel m, ModelKind section) {
-    // Read the selection through the section too: with `m.kind` the Qwen3.5
-    // row under "Chat model" showed the *vision* radio, so it could look
-    // unselected while it was the model actually in use.
+  /// Derives the status chip label and tint for a model within [section].
+  /// Uses the section's selection slot so Qwen3.5 under "Chat model" still
+  /// reads as the loaded chat model rather than as a standalone vision pick.
+  _ModelStatus _modelStatus(LocalModel m, ModelKind section) {
+    final selected = _selectedId(section) == m.id;
+    if (!ModelCatalog.isUsable(m)) return _ModelStatus.notInstalled;
+    return Future.sync(() => _manager.isInstalled(m)).then((installed) {
+      if (!mounted) return _ModelStatus.notInstalled;
+      if (!installed) return _ModelStatus.notInstalled;
+      if (selected) return _ModelStatus.selectedPending;
+      return _ModelStatus.installed;
+    });
+  }
+
+  Widget _row(LocalModel m, ModelKind section, int index) {
     final usable = ModelCatalog.isUsable(m);
     final selected = _selectedId(section) == m.id;
 
-    return FutureBuilder<bool>(
-      future: _manager.isInstalled(m),
-      builder: (context, snap) {
-        final installed = snap.data ?? false;
-        final tappable = usable && installed;
-        return ListTile(
-          dense: true,
-          enabled: tappable,
-          leading: Icon(
-            !usable
-                ? Icons.block
-                : (selected
-                      ? Icons.radio_button_checked
-                      : Icons.radio_button_unchecked),
-            size: 20,
-            color: selected ? Theme.of(context).colorScheme.primary : null,
-          ),
-          title: Text(m.displayName),
-          subtitle: Text(
-            !usable
-                ? (m.unsupportedReason ?? 'Not supported by this build')
-                : '${m.sizeLabel}  ·  '
-                      '${installed ? 'downloaded' : 'not downloaded'}',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: usable ? null : Theme.of(context).colorScheme.error,
-            ),
-          ),
-          onTap: tappable ? () => _chooseIn(section, m) : null,
-        );
-      },
+    return FadeSlideIn(
+      delay: staggerDelay(index),
+      child: FutureBuilder<bool>(
+        future: _manager.isInstalled(m),
+        builder: (context, snap) {
+          final installed = snap.data ?? false;
+          final tappable = usable && installed;
+
+          // Derive status for the badge/icon.
+          _ModelStatus status;
+          if (!usable) {
+            status = _ModelStatus.notInstalled;
+          } else if (!installed) {
+            status = _ModelStatus.notInstalled;
+          } else if (selected) {
+            status = _ModelStatus.selectedPending;
+          } else {
+            status = _ModelStatus.installed;
+          }
+
+          return _ModelRowCard(
+            model: m,
+            section: section,
+            selected: selected,
+            installed: installed,
+            usable: usable,
+            status: status,
+            onTap: tappable ? () => _chooseIn(section, m) : null,
+          );
+        },
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
     // Watched rather than read: `_loadSelectedModels` writes `model_path` when
     // it finishes, and this row has to update the moment it does.
     final path = ref.watch(settingsProvider)['model_path'] as String?;
@@ -1404,74 +1590,75 @@ class _ModelPickerBodyState extends ConsumerState<_ModelPickerBody> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ListTile(
-              dense: true,
-              leading: Icon(
-                loaded == null ? Icons.memory : Icons.check_circle,
-                color: loaded == null ? null : Colors.green,
-              ),
-              title: Text(loaded ?? 'Nothing loaded'),
-              subtitle: Text(
-                loaded == null
-                    ? 'Tap Load to bind the selected models'
-                    : 'Currently in memory',
-              ),
+            // -------------------------------------------------------- status card
+            _LoadedModelCard(loaded: loaded),
+            const SizedBox(height: 4),
+            if (stale) const _StaleWarningBanner(),
+            const SizedBox(height: 8),
+            (() {
+              final chatModel = _chatModelForWarning();
+              if (chatModel != null &&
+                  _isVisionArchIncompatible(
+                    vision: _visionId != null
+                        ? ModelCatalog.byId(_visionId)
+                        : null,
+                    chat: chatModel,
+                  )) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 4,
+                  ),
+                  child: _ArchWarningCard(
+                    chatModel: chatModel,
+                    visionId: _visionId,
+                  ),
+                );
+              }
+              return const SizedBox.shrink();
+            }()),
+
+            const SizedBox(height: 4),
+
+            // ------------------------------------------------ section dividers
+            ..._section(context, 'Chat model', ModelKind.llm, text, scheme),
+            const SizedBox(height: 4),
+            ..._section(
+              context,
+              'Vision model',
+              ModelKind.vision,
+              text,
+              scheme,
             ),
-            if (stale)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Text(
-                  'The file in memory is not the model selected below. '
-                  'Tap Load to switch.',
-                  style: Theme.of(context).textTheme.bodySmall
-                      ?.copyWith(color: Theme.of(context).colorScheme.error),
-                ),
-              ),
-            // Architecture mismatch warning: Qwen3.5 vision requires its
-            // matching LLM. SmolLM2 (phi2) + Qwen3.5 projector always fails
-            // at the native layer because the projector expects qwen35 context.
-            // Note: Cannot use await in build(), so we check synchronously
-            if (_isVisionArchIncompatible(
-              vision: _visionId != null ? ModelCatalog.byId(_visionId) : null,
-              chat: _chatModelForWarning(),
-            ))
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Text(
-                  // The chat side must be the *selected* model. Reading the
-                  // catalog default here printed "Qwen2.5 0.5B cannot use …"
-                  // even when Qwen3.5 was selected on both sides, which made
-                  // the warning look like a bug rather than guidance.
-                  '${_chatModelForWarning().displayName} cannot use '
-                  '${_visionId != null ? (ModelCatalog.byId(_visionId)?.displayName ?? "vision model") : "vision model"}. '
-                  'Vision projectors only work with their matching LLM. '
-                  'Select the vision model as the chat model instead.',
-                  style: Theme.of(context).textTheme.bodySmall
-                      ?.copyWith(color: Theme.of(context).colorScheme.error),
-                ),
-              ),
-            const Divider(),
-            ..._section(context, 'Chat model', ModelKind.llm),
-            const Divider(),
-            ..._section(context, 'Vision model', ModelKind.vision),
-            const Divider(),
-            ..._section(context, 'Embeddings', ModelKind.embedding),
+            const SizedBox(height: 4),
+            ..._section(
+              context,
+              'Embeddings',
+              ModelKind.embedding,
+              text,
+              scheme,
+            ),
+            const SizedBox(height: 8),
           ],
         ),
       ),
     );
   }
 
-  List<Widget> _section(BuildContext context, String title, ModelKind kind) {
+  List<Widget> _section(
+    BuildContext context,
+    String title,
+    ModelKind kind,
+    TextTheme text,
+    ColorScheme scheme,
+  ) {
+    final models = _catalog(kind);
     return [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-        child: Text(title, style: Theme.of(context).textTheme.labelLarge),
-      ),
+      _SectionHeader(title: title, textColor: scheme.primary),
       // The section is passed down explicitly: a model listed under "Chat
       // model" has to be selectable *as* the chat model even when its catalog
       // `kind` says otherwise (Qwen3.5, which is registered as `vision`).
-      ..._catalog(kind).map((m) => _row(m, kind)),
+      ...models.asMap().entries.map((e) => _row(e.value, kind, e.key)),
     ];
   }
 
@@ -1493,10 +1680,542 @@ class _ModelPickerBodyState extends ConsumerState<_ModelPickerBody> {
   }
 
   /// The chat model the warning should name: the user's selection when there
-  /// is one (and it resolves), otherwise the catalog default.
-  LocalModel _chatModelForWarning() =>
-      (_llmId != null ? ModelCatalog.byId(_llmId) : null) ??
-      ModelCatalog.defaultLlm;
+  /// is one (and it resolves), otherwise null (no warning when nothing selected).
+  LocalModel? _chatModelForWarning() =>
+      (_llmId != null ? ModelCatalog.byId(_llmId) : null);
+}
+
+// --------------------------------------------------------------------------- widgets
+
+/// Beautiful status card shown at the top of the picker.
+///
+/// Displays the currently loaded model (or a clear "nothing loaded" state) with
+/// a gradient-inspired container that uses the brand colour. When the selected
+/// model doesn't match what is actually in memory, a slim amber banner appears
+/// beneath the card.
+class _LoadedModelCard extends StatelessWidget {
+  const _LoadedModelCard({required this.loaded});
+
+  final String? loaded;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      decoration: BoxDecoration(
+        gradient: loaded == null
+            ? LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  scheme.surfaceContainerHigh,
+                  scheme.surfaceContainerHighest,
+                ],
+              )
+            : LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  scheme.primary.withValues(alpha: 0.18),
+                  scheme.primary.withValues(alpha: 0.07),
+                ],
+              ),
+        borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
+        border: Border.all(
+          color: loaded == null
+              ? scheme.outlineVariant.withValues(alpha: 0.4)
+              : scheme.primary.withValues(alpha: 0.35),
+          width: 1,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // Icon circle
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: loaded == null
+                    ? scheme.onSurfaceVariant.withValues(alpha: 0.10)
+                    : scheme.primary.withValues(alpha: 0.18),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: loaded == null
+                      ? scheme.outline.withValues(alpha: 0.3)
+                      : scheme.primary.withValues(alpha: 0.40),
+                  width: 1.2,
+                ),
+              ),
+              child: Icon(
+                loaded == null ? Icons.memory_outlined : Icons.check_circle,
+                size: 22,
+                color: loaded == null
+                    ? scheme.onSurfaceVariant
+                    : scheme.primary,
+              ),
+            ),
+            const SizedBox(width: 12),
+            // Text
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    loaded ?? 'No model loaded',
+                    style: text.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: loaded == null ? scheme.onSurfaceVariant : null,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    loaded == null
+                        ? 'Select a model below, then tap Load'
+                        : 'Running in memory',
+                    style: text.bodySmall?.copyWith(
+                      color: loaded == null
+                          ? scheme.onSurfaceVariant
+                          : scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Status chip
+            if (loaded != null)
+              _StatusChip(
+                label: 'Loaded',
+                color: AppColors.success,
+                icon: Icons.check_rounded,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Slim amber warning bar shown when the selected model differs from the one in
+/// memory. Placed directly beneath [_LoadedModelCard].
+class _StaleWarningBanner extends StatelessWidget {
+  const _StaleWarningBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: scheme.warning.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+        border: Border.all(
+          color: scheme.warning.withValues(alpha: 0.30),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.info_outline_rounded, size: 16, color: scheme.warning),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'The file in memory is not the model selected below. Tap Load to switch.',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: scheme.warning,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Architecture mismatch warning card.
+///
+/// Uses a red-tinted container with an explicit warning icon so the user sees
+/// this as a blocking issue rather than a subtle text note.
+class _ArchWarningCard extends StatelessWidget {
+  const _ArchWarningCard({required this.chatModel, required this.visionId});
+
+  final LocalModel chatModel;
+  final String? visionId;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    final visionDisplay = visionId != null
+        ? (ModelCatalog.byId(visionId)?.displayName ?? 'vision model')
+        : 'vision model';
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: scheme.error.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+        border: Border.all(
+          color: scheme.error.withValues(alpha: 0.25),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: scheme.error.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.warning_amber_rounded,
+              size: 18,
+              color: scheme.error,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '${chatModel.displayName} cannot use $visionDisplay. '
+              'Vision projectors only work with their matching LLM. '
+              'Select the vision model as the chat model instead.',
+              style: text.bodySmall?.copyWith(color: scheme.error),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A single model row rendered as a card with status badge and role icon.
+class _ModelRowCard extends StatelessWidget {
+  const _ModelRowCard({
+    required this.model,
+    required this.section,
+    required this.selected,
+    required this.installed,
+    required this.usable,
+    required this.status,
+    required this.onTap,
+  });
+
+  final LocalModel model;
+  final ModelKind section;
+  final bool selected;
+  final bool installed;
+  final bool usable;
+  final _ModelStatus status;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final text = theme.textTheme;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+      child: Card(
+        elevation: selected ? 2 : 0,
+        color: selected
+            ? scheme.primary.withValues(alpha: 0.10)
+            : AppColors.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+          side: BorderSide(
+            color: selected
+                ? scheme.primary.withValues(alpha: 0.45)
+                : scheme.outlineVariant.withValues(alpha: 0.35),
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // Role / status icon
+                _ModelRoleIcon(
+                  model: model,
+                  usable: usable,
+                  selected: selected,
+                  installed: installed,
+                  status: status,
+                ),
+                const SizedBox(width: 10),
+                // Title + meta
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        model.displayName,
+                        style: text.titleMedium?.copyWith(
+                          fontWeight: selected
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                          color: usable
+                              ? selected
+                                    ? scheme.primary
+                                    : null
+                              : scheme.onSurfaceVariant,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        model.description,
+                        style: text.bodySmall?.copyWith(
+                          color: usable
+                              ? scheme.onSurfaceVariant
+                              : scheme.onSurfaceVariant.withValues(alpha: 0.6),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (!usable && model.unsupportedReason != null) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          model.unsupportedReason!,
+                          style: text.bodySmall?.copyWith(
+                            color: scheme.error.withValues(alpha: 0.8),
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // Status badge
+                _StatusBadge(
+                  status: status,
+                  installed: installed,
+                  usable: usable,
+                ),
+                const SizedBox(width: 4),
+                // Size tag
+                if (usable) _SizeTag(label: model.sizeLabel),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Circular icon showing the model's role and selection state.
+class _ModelRoleIcon extends StatelessWidget {
+  const _ModelRoleIcon({
+    required this.model,
+    required this.usable,
+    required this.selected,
+    required this.installed,
+    required this.status,
+  });
+
+  final LocalModel model;
+  final bool usable;
+  final bool selected;
+  final bool installed;
+  final _ModelStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    late final Color tint;
+    late final IconData icon;
+
+    if (!usable) {
+      tint = scheme.onSurfaceVariant.withValues(alpha: 0.4);
+      icon = Icons.block;
+    } else if (selected) {
+      tint = scheme.primary;
+      icon = model.kind == ModelKind.embedding
+          ? Icons.check_circle
+          : Icons.psychology;
+    } else if (status == _ModelStatus.installed) {
+      tint = AppColors.success;
+      icon = model.kind == ModelKind.embedding
+          ? Icons.dns_outlined
+          : (model.kind == ModelKind.vision
+                ? Icons.visibility_outlined
+                : Icons.psychology_outlined);
+    } else {
+      tint = scheme.onSurfaceVariant.withValues(alpha: 0.5);
+      icon = Icons.cloud_download_outlined;
+    }
+
+    return Container(
+      width: 34,
+      height: 34,
+      decoration: BoxDecoration(
+        color: tint.withValues(alpha: selected ? 0.18 : 0.10),
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: tint.withValues(alpha: selected ? 0.50 : 0.25),
+          width: 1.2,
+        ),
+      ),
+      child: Icon(icon, size: 17, color: tint),
+    );
+  }
+}
+
+/// Pill-shaped badge indicating download / selection status.
+class _StatusBadge extends StatelessWidget {
+  const _StatusBadge({
+    required this.status,
+    required this.installed,
+    required this.usable,
+  });
+
+  final _ModelStatus status;
+  final bool installed;
+  final bool usable;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    late final String label;
+    late final Color tint;
+    late final IconData icon;
+
+    if (!usable) {
+      label = 'Unsupported';
+      tint = theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.5);
+      icon = Icons.block;
+    } else if (status == _ModelStatus.selectedPending) {
+      label = 'Selected';
+      tint = AppColors.success;
+      icon = Icons.check_circle;
+    } else if (installed) {
+      label = 'Downloaded';
+      tint = AppColors.success;
+      icon = Icons.check_circle_outline;
+    } else {
+      label = 'Not downloaded';
+      tint = theme.colorScheme.onSurfaceVariant;
+      icon = Icons.cloud_download_outlined;
+    }
+
+    return _StatusChip(label: label, color: tint, icon: icon);
+  }
+}
+
+/// Slim pill with icon + label. Used for both status badges and the "Loaded" chip.
+class _StatusChip extends StatelessWidget {
+  const _StatusChip({
+    required this.label,
+    required this.color,
+    required this.icon,
+  });
+
+  final String label;
+  final Color color;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelSmall
+                ?.copyWith(color: color, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Small size tag (e.g. "600 MB") shown to the right of the status badge.
+class _SizeTag extends StatelessWidget {
+  const _SizeTag({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+        color: Theme.of(context).colorScheme.onSurfaceVariant
+            .withValues(alpha: 0.65),
+      ),
+    );
+  }
+}
+
+/// Section header with a coloured accent line.
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({required this.title, required this.textColor});
+
+  final String title;
+  final Color textColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+      child: Row(
+        children: [
+          Container(
+            width: 3,
+            height: 16,
+            decoration: BoxDecoration(
+              color: textColor,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            title,
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              color: textColor,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.3,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Thinking indicator shown while the model is generating.
@@ -1520,12 +2239,24 @@ class _ThinkingBubbleState extends State<ThinkingBubble>
     // One full three-dot cycle. Short enough to feel like the model is
     // thinking rather than the app is hung, long enough for each dot's pulse
     // to be legible.
-    duration: const Duration(milliseconds: 1100),
-  )..repeat();
+    duration: const Duration(milliseconds: 1200),
+  )..repeat(reverse: true);
+
+  late final AnimationController _scaleController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 300),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _scaleController.forward();
+  }
 
   @override
   void dispose() {
     _controller.dispose();
+    _scaleController.dispose();
     super.dispose();
   }
 
@@ -1534,58 +2265,86 @@ class _ThinkingBubbleState extends State<ThinkingBubble>
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
 
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              color: AppColors.accent.withValues(alpha: 0.12),
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: AppColors.accent.withValues(alpha: 0.28),
-              ),
-            ),
-            child: const Icon(
-              Icons.psychology,
-              size: 16,
-              color: AppColors.accent,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: AppColors.aiBubble,
-              borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
-              border: Border.all(
-                color: scheme.outlineVariant.withValues(alpha: 0.45),
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _PulsingDots(animation: _controller),
-                const SizedBox(width: 12),
-                Text(
-                  'Thinking...',
-                  style: text.bodySmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
+    return ScaleTransition(
+      scale: CurvedAnimation(
+        parent: _scaleController,
+        curve: AppMotion.enter,
+        reverseCurve: AppMotion.exit,
+      ),
+      child: FadeTransition(
+        opacity: _scaleController,
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: AppColors.accent.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: AppColors.accent.withValues(alpha: 0.35),
                   ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.accent.withValues(alpha: 0.15),
+                      blurRadius: 8,
+                      spreadRadius: 1,
+                    ),
+                  ],
                 ),
-              ],
-            ),
+                child: const Icon(
+                  Icons.psychology,
+                  size: 17,
+                  color: AppColors.accent,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 14,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.aiBubble,
+                  borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
+                  border: Border.all(
+                    color: scheme.outlineVariant.withValues(alpha: 0.45),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.15),
+                      blurRadius: 4,
+                      offset: const Offset(0, 1),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _PulsingDots(animation: _controller),
+                    const SizedBox(width: 14),
+                    Text(
+                      'Thinking...',
+                      style: text.bodyMedium?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
 }
 
-/// Three dots that brighten one after another.
+/// Three dots that brighten one after another with a smooth wave animation.
 ///
 /// An [Interval] per dot off a single controller, so the whole indicator is one
 /// ticker rather than three animations that drift apart. The dots return to
@@ -1598,45 +2357,57 @@ class _PulsingDots extends StatelessWidget {
 
   static const int _dotCount = 3;
 
-  /// Active window for each dot as a fraction of the cycle. 0.3 of 1100 ms is
-  /// a ~330 ms pulse with a gap before the next — the gap is what makes the
-  /// sequence legible as a sequence.
-  static const double _slot = 0.3;
+  /// Active window for each dot as a fraction of the cycle.
+  static const double _slot = 0.33;
 
   @override
   Widget build(BuildContext context) {
-    final base = Theme.of(context).colorScheme.onSurfaceVariant;
+    final base = Theme.of(context).colorScheme.onSurfaceVariant
+        .withValues(alpha: 0.4);
     final peak = AppColors.accent;
 
-    // Built once per build rather than per frame: a CurvedAnimation allocated
-    // inside an AnimatedBuilder's builder is re-created on every tick for no
-    // reason.
     final pulses = [
       for (var i = 0; i < _dotCount; i++)
         CurvedAnimation(
           parent: animation,
-          curve: Interval(i * _slot, (i + 1) * _slot, curve: Curves.easeOut),
+          curve: Interval(i * _slot, (i + 1) * _slot, curve: Curves.easeInOut),
         ),
     ];
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (var i = 0; i < _dotCount; i++) ...[
-          AnimatedBuilder(
-            animation: pulses[i],
-            builder: (context, _) => Container(
-              width: 7,
-              height: 7,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Color.lerp(base, peak, pulses[i].value),
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, _) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < _dotCount; i++) ...[
+              Transform.scale(
+                scale: 0.7 + (pulses[i].value * 0.6),
+                child: Container(
+                  width: 8,
+                  height: 8,
+                  margin: EdgeInsets.only(right: i != _dotCount - 1 ? 6 : 0),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Color.lerp(base, peak, pulses[i].value),
+                    boxShadow: pulses[i].value > 0.5
+                        ? [
+                            BoxShadow(
+                              color: AppColors.accent.withValues(
+                                alpha: 0.5 * pulses[i].value,
+                              ),
+                              blurRadius: 6,
+                              spreadRadius: 1,
+                            ),
+                          ]
+                        : null,
+                  ),
+                ),
               ),
-            ),
-          ),
-          if (i != _dotCount - 1) const SizedBox(width: 5),
-        ],
-      ],
+            ],
+          ],
+        );
+      },
     );
   }
 }

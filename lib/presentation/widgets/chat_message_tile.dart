@@ -10,16 +10,40 @@ import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../core/theme/motion.dart';
 import '../../domain/models/models.dart';
 
 /// Renders a single [ChatMessage] as an avatar-and-bubble row.
 ///
 /// Text stays inside a [SelectableText] so long-press to copy, and the
 /// selectable-region behaviour users already rely on, is unchanged.
-class ChatMessageTile extends StatelessWidget {
+class ChatMessageTile extends StatefulWidget {
   const ChatMessageTile({super.key, required this.message});
 
   final ChatMessage message;
+
+  @override
+  State<ChatMessageTile> createState() => _ChatMessageTileState();
+}
+
+class _ChatMessageTileState extends State<ChatMessageTile>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 400),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -29,17 +53,74 @@ class ChatMessageTile extends StatelessWidget {
     final text = theme.textTheme;
     final maxWidth = MediaQuery.of(context).size.width * 0.85;
 
-    final bubble = Container(
+    return FadeSlideIn(
+      duration: const Duration(milliseconds: 400),
+      dy: 0.04,
+      child: ScaleTransition(
+        scale: CurvedAnimation(
+          parent: _controller,
+          curve: AppMotion.enter,
+          reverseCurve: AppMotion.exit,
+        ),
+        child: _buildMessage(isUser, scheme, text, maxWidth),
+      ),
+    );
+  }
+
+  Widget _buildMessage(
+    bool isUser,
+    ColorScheme scheme,
+    TextTheme text,
+    double maxWidth,
+  ) {
+    final bubble = _buildBubble(isUser, scheme, text, maxWidth);
+
+    if (isUser) {
+      return Align(alignment: Alignment.centerRight, child: bubble);
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _AssistantAvatar(),
+        const SizedBox(width: 10),
+        Flexible(child: bubble),
+      ],
+    );
+  }
+
+  Widget _buildBubble(
+    bool isUser,
+    ColorScheme scheme,
+    TextTheme text,
+    double maxWidth,
+  ) {
+    return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       constraints: BoxConstraints(maxWidth: maxWidth),
       decoration: BoxDecoration(
         color: isUser ? AppColors.userBubble : AppColors.aiBubble,
         borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
-        // The AI bubble sits on the page background, so it needs a hairline to
-        // read as a surface; the user bubble is brand-filled and needs none.
         border: isUser
             ? null
             : Border.all(color: scheme.outlineVariant.withValues(alpha: 0.45)),
+        boxShadow: isUser
+            ? [
+                BoxShadow(
+                  color: AppColors.brand.withValues(alpha: 0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                  spreadRadius: 0,
+                ),
+              ]
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.15),
+                  blurRadius: 4,
+                  offset: const Offset(0, 1),
+                  spreadRadius: 0,
+                ),
+              ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -61,11 +142,6 @@ class ChatMessageTile extends StatelessWidget {
               ],
             ),
           if (!isUser) const SizedBox(height: 6),
-          // Assistant replies are Markdown: a coding answer is mostly fenced
-          // code blocks, and plain text renders them as an unreadable wall of
-          // backticks. `MarkdownStyle.fromTheme` keeps it on our palette
-          // instead of the package's black-on-white default. The user's own
-          // message stays a SelectableText — there is nothing to render.
           if (isUser)
             SelectableText(message.content, style: text.bodyLarge)
           else
@@ -118,19 +194,6 @@ class ChatMessageTile extends StatelessWidget {
         ],
       ),
     );
-
-    if (isUser) {
-      return Align(alignment: Alignment.centerRight, child: bubble);
-    }
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _AssistantAvatar(),
-        const SizedBox(width: 8),
-        Flexible(child: bubble),
-      ],
-    );
   }
 
   /// A zero timestamp means "not recorded"; there is nothing honest to show.
@@ -151,18 +214,53 @@ class ChatMessageTile extends StatelessWidget {
 ///
 /// Small, low-contrast, and cyan: it marks authorship without turning every
 /// reply into an avatar that competes with the text.
-class _AssistantAvatar extends StatelessWidget {
+class _AssistantAvatar extends StatefulWidget {
+  @override
+  State<_AssistantAvatar> createState() => _AssistantAvatarState();
+}
+
+class _AssistantAvatarState extends State<_AssistantAvatar>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulseController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 2000),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 28,
-      height: 28,
-      decoration: BoxDecoration(
-        color: AppColors.accent.withValues(alpha: 0.12),
-        shape: BoxShape.circle,
-        border: Border.all(color: AppColors.accent.withValues(alpha: 0.28)),
-      ),
-      child: const Icon(Icons.psychology, size: 16, color: AppColors.accent),
+    return AnimatedBuilder(
+      animation: _pulseController,
+      builder: (context, child) {
+        return Container(
+          width: 30,
+          height: 30,
+          decoration: BoxDecoration(
+            color: AppColors.accent.withValues(alpha: 0.12),
+            shape: BoxShape.circle,
+            border: Border.all(color: AppColors.accent.withValues(alpha: 0.28)),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.accent.withValues(
+                  alpha: 0.15 + (0.1 * _pulseController.value),
+                ),
+                blurRadius: 8,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
+          child: const Icon(
+            Icons.psychology,
+            size: 16,
+            color: AppColors.accent,
+          ),
+        );
+      },
     );
   }
 }

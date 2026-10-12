@@ -1,14 +1,5 @@
-/// Settings screen.
-///
-/// Grouped into named sections rather than a flat run of dividers. A settings
-/// list is a map, and the previous layout — twelve tiles separated by rules,
-/// with no grouping — made every entry look equally important, including
-/// "Erase all data". Section headers say which bucket a control is in and the
-/// one-line subtitles say what the bucket does.
-///
-/// Everything functional is unchanged: the same providers, the same dialogs,
-/// the same two-step confirmation on the destructive action. Only the
-/// presentation moved.
+/// Settings screen with polished UI, smooth animations, enhanced organization,
+/// prominent model management, and animated feedback on setting changes.
 library;
 
 import 'dart:io';
@@ -32,181 +23,418 @@ import 'models_screen.dart';
 import 'onboarding_screen.dart';
 import 'performance_screen.dart';
 
-class SettingsScreen extends ConsumerWidget {
+class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final settings = ref.watch(settingsProvider);
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends ConsumerState<SettingsScreen>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _animController;
+  late final Animation<double> _fadeAnimation;
+  String? _lastChangedSetting;
+
+  @override
+  void initState() {
+    super.initState();
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    _fadeAnimation = CurvedAnimation(
+      parent: _animController,
+      curve: Curves.easeInOut,
+    );
+    _animController.forward();
+  }
+
+  @override
+  void dispose() {
+    _animController.dispose();
+    super.dispose();
+  }
+
+  void _triggerFeedback(String settingKey) {
+    setState(() {
+      _lastChangedSetting = settingKey;
+    });
+    _animController.forward(from: 0.0);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final permissions = ref.watch(toolPermissionsProvider);
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-        children: [
-          // Model Management — the real chooser/downloader.
-          const ScreenSection(
-            title: 'Models & inference',
-            subtitle:
-                'What runs the assistant, and how well it answers. The model '
-                'itself is downloaded to this device.',
-            padding: EdgeInsets.zero,
-            child: ModelsTile(),
-          ),
-
-          const SizedBox(height: 20),
-
-          const ScreenSection(
-            title: 'Assistant',
-            subtitle:
-                'How the model is addressed. Context is how much of a '
-                'conversation it can hold at once.',
-            padding: EdgeInsets.zero,
-            child: _AssistantGroup(),
-          ),
-
-          const SizedBox(height: 20),
-
-          const ScreenSection(
-            title: 'Voice',
-            subtitle: 'Speaking and listening.',
-            padding: EdgeInsets.zero,
-            child: VoiceSettings(),
-          ),
-
-          const SizedBox(height: 20),
-
-          ScreenSection(
-            title: 'Privacy & security',
-            subtitle:
-                'What the agent may do on this device, and whether anything '
-                'is ever sent off it.',
-            padding: EdgeInsets.zero,
-            child: PermissionList(permissions: permissions),
-          ),
-
-          const SizedBox(height: 20),
-
-          const ScreenSection(
-            title: 'Cloud',
-            subtitle:
-                'Cloud is off until you add a key and confirm. The on-device '
-                'model stays the default.',
-            padding: EdgeInsets.zero,
-            child: CloudPrivacySection(),
-          ),
-
-          const SizedBox(height: 20),
-
-          const ScreenSection(
-            title: 'Data',
-            subtitle: 'Everything this app stores lives here.',
-            padding: EdgeInsets.zero,
-            child: EraseDataSection(),
-          ),
-
-          const SizedBox(height: 20),
-
-          const ScreenSection(
-            title: 'About',
-            subtitle: 'Diagnostics, cloud models and version.',
-            padding: EdgeInsets.zero,
-            child: AboutSection(),
-          ),
+      appBar: AppBar(
+        title: const Text('Settings'),
+        elevation: 0,
+        actions: [
+          if (_lastChangedSetting != null)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.only(right: 16.0),
+                child: FadeTransition(
+                  opacity: _fadeAnimation,
+                  child: Chip(
+                    backgroundColor: scheme.primaryContainer,
+                    labelStyle: TextStyle(
+                      fontSize: 11,
+                      color: scheme.onPrimaryContainer,
+                    ),
+                    label: Text('Updated: $_lastChangedSetting'),
+                    avatar: Icon(
+                      Icons.check_circle,
+                      size: 14,
+                      color: scheme.primary,
+                    ),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ),
+              ),
+            ),
         ],
+      ),
+      body: FadeTransition(
+        opacity: _fadeAnimation,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
+          children: [
+            // Prominent Model Management entry point
+            FadeSlideIn(
+              delay: Duration.zero,
+              child: _ProminentModelsSection(
+                onChanged: () => _triggerFeedback('model_management'),
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            FadeSlideIn(
+              delay: const Duration(milliseconds: 45),
+              child: ScreenSection(
+                title: 'Assistant & Behavior',
+                subtitle:
+                    'Fine-tune personality traits and memory context window.',
+                padding: EdgeInsets.zero,
+                child: _AssistantGroup(
+                  onChanged: (key) => _triggerFeedback(key),
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            FadeSlideIn(
+              delay: const Duration(milliseconds: 90),
+              child: ScreenSection(
+                title: 'Voice & Output',
+                subtitle: 'Configure speech synthesis and auditory feedback.',
+                padding: EdgeInsets.zero,
+                child: VoiceSettings(onChanged: (key) => _triggerFeedback(key)),
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            FadeSlideIn(
+              delay: const Duration(milliseconds: 135),
+              child: ScreenSection(
+                title: 'Privacy & Security',
+                subtitle: 'Control device capabilities and tool execution permissions.',
+                padding: EdgeInsets.zero,
+                child: PermissionList(permissions: permissions),
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            FadeSlideIn(
+              delay: const Duration(milliseconds: 180),
+              child: ScreenSection(
+                title: 'Cloud Integration',
+                subtitle:
+                    'Connect optional cloud endpoints with explicit consent.',
+                padding: EdgeInsets.zero,
+                child: CloudPrivacySection(
+                  onChanged: () => _triggerFeedback('cloud_consent'),
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            FadeSlideIn(
+              delay: const Duration(milliseconds: 225),
+              child: ScreenSection(
+                title: 'Data & Storage',
+                subtitle: 'Manage local database, history, and secure state.',
+                padding: EdgeInsets.zero,
+                child: const EraseDataSection(),
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            FadeSlideIn(
+              delay: const Duration(milliseconds: 270),
+              child: ScreenSection(
+                title: 'About & Diagnostics',
+                subtitle:
+                    'Version details, hardware benchmark, and license info.',
+                padding: EdgeInsets.zero,
+                child: const AboutSection(),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-/// Personality and context size, side by side.
-///
-/// They belong together: both change how the model answers, and a user tuning
-/// "it forgets what I said" wants both within reach.
+/// Prominent Model Management Card with glowing badge and clear status indicator
+class _ProminentModelsSection extends ConsumerWidget {
+  const _ProminentModelsSection({required this.onChanged});
+
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final llmService = ref.read(llmServiceProvider);
+    final loaded = llmService.isLoaded;
+    final modelPath = llmService.modelPath;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        gradient: LinearGradient(
+          colors: [
+            scheme.primary.withValues(alpha: 0.15),
+            scheme.secondary.withValues(alpha: 0.08),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        border: Border.all(
+          color: scheme.primary.withValues(alpha: 0.3),
+          width: 1.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: scheme.primary.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(20),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: () {
+            Navigator.of(context)
+                .push(AppPageRoute(builder: (_) => const ModelsScreen()));
+            onChanged();
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Row(
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: scheme.primary,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: scheme.primary.withValues(alpha: 0.4),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.psychology_rounded,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            'Model Management',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: scheme.onSurface,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: loaded
+                                  ? AppColors.success.withValues(alpha: 0.2)
+                                  : AppColors.warning.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              loaded ? 'ACTIVE' : 'NO MODEL',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: loaded
+                                    ? AppColors.success
+                                    : AppColors.warning,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        loaded && modelPath != null
+                            ? 'Path: $modelPath'
+                            : 'Tap here to download and switch GGUF models',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  size: 18,
+                  color: scheme.primary,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Personality and context size grouped together with custom animations.
 class _AssistantGroup extends ConsumerWidget {
-  const _AssistantGroup();
+  const _AssistantGroup({required this.onChanged});
+
+  final ValueChanged<String> onChanged;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
           child: Row(
             children: [
-              const ScreenRowIcon(icon: Icons.person_outline, size: 32),
-              const SizedBox(width: 10),
+              ScreenRowIcon(
+                icon: Icons.face_retouching_natural,
+                color: scheme.primary,
+                size: 34,
+              ),
+              const SizedBox(width: 12),
               Expanded(
-                child: Text(
-                  'Personality',
-                  style: Theme.of(context).textTheme.labelMedium,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Personality Style',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Tone and behavioral profile of responses',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
         ),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
           child: PersonalitySelector(
             current: settings['personality'] as String?,
+            onChanged: () => onChanged('personality'),
           ),
         ),
-        const ScreenRowDivider(),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          child: ScreenRowDivider(),
+        ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
           child: Row(
             children: [
-              const ScreenRowIcon(icon: Icons.tune, size: 32),
-              const SizedBox(width: 10),
+              ScreenRowIcon(
+                icon: Icons.memory_rounded,
+                color: scheme.secondary,
+                size: 34,
+              ),
+              const SizedBox(width: 12),
               Expanded(
-                child: Text(
-                  'Context size',
-                  style: Theme.of(context).textTheme.labelMedium,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Context Token Window',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'How many tokens the model remembers in active dialog',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
         ),
         Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: ContextSizeSelector(current: settings['context_size'] as int?),
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          child: ContextSizeSelector(
+            current: settings['context_size'] as int?,
+            onChanged: () => onChanged('context_size'),
+          ),
         ),
       ],
     );
   }
 }
 
-/// Entry point into the Models chooser/downloader.
-class ModelsTile extends ConsumerWidget {
-  const ModelsTile({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final llmService = ref.read(llmServiceProvider);
-    final loaded = llmService.isLoaded;
-
-    return ListTile(
-      leading: const ScreenRowIcon(icon: Icons.model_training),
-      title: const Text('Download and select models'),
-      subtitle: Text(
-        loaded ? 'Loaded: ${llmService.modelPath}' : 'No model loaded',
-      ),
-      trailing: Icon(
-        loaded ? Icons.check_circle : Icons.warning_amber_rounded,
-        color: loaded ? AppColors.success : AppColors.warning,
-      ),
-      onTap: () =>
-          Navigator.of(context)
-              .push(AppPageRoute(builder: (_) => const ModelsScreen())),
-    );
-  }
-}
-
-/// Permission list widget
+/// Permission list widget with enhanced row styling and icons
 class PermissionList extends ConsumerWidget {
   final Map<String, String> permissions;
 
@@ -220,7 +448,11 @@ class PermissionList extends ConsumerWidget {
       children: [
         for (var i = 0; i < tools.length; i++) ...[
           _permissionRow(context, ref, tools[i]),
-          if (i != tools.length - 1) const ScreenRowDivider(),
+          if (i != tools.length - 1)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: ScreenRowDivider(),
+            ),
         ],
       ],
     );
@@ -228,9 +460,8 @@ class PermissionList extends ConsumerWidget {
 
   Widget _permissionRow(BuildContext context, WidgetRef ref, String tool) {
     final current = permissions[tool] ?? 'ask';
+    final theme = Theme.of(context);
 
-    // The permission word is the most consequential thing on this row, so it
-    // carries the colour: green runs freely, amber asks first, red is refused.
     final tint = switch (current) {
       AppConstants.permissionAllow => AppColors.success,
       AppConstants.permissionBlock => AppColors.danger,
@@ -238,20 +469,67 @@ class PermissionList extends ConsumerWidget {
     };
 
     return ListTile(
-      leading: ScreenRowIcon(icon: _getToolIcon(tool), color: tint, size: 34),
-      title: Text(_getToolName(tool)),
-      subtitle: Text('Permission: $current'),
-      trailing: PopupMenuButton<String>(
-        initialValue: current,
-        tooltip: 'Permission',
-        onSelected: (value) {
-          ref.read(toolPermissionsProvider.notifier).setPermission(tool, value);
-        },
-        itemBuilder: (context) => [
-          const PopupMenuItem(value: 'allow', child: Text('Allow')),
-          const PopupMenuItem(value: 'ask', child: Text('Ask')),
-          const PopupMenuItem(value: 'block', child: Text('Block')),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: ScreenRowIcon(icon: _getToolIcon(tool), color: tint, size: 36),
+      title: Text(
+        _getToolName(tool),
+        style: theme.textTheme.bodyMedium?.copyWith(
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      subtitle: Row(
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(color: tint, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            'Permission: ${current.toUpperCase()}',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: tint,
+              fontWeight: FontWeight.w600,
+              fontSize: 11,
+            ),
+          ),
         ],
+      ),
+      trailing: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: tint.withValues(alpha: 0.4)),
+        ),
+        child: PopupMenuButton<String>(
+          initialValue: current,
+          tooltip: 'Select Permission',
+          onSelected: (value) {
+            ref
+                .read(toolPermissionsProvider.notifier)
+                .setPermission(tool, value);
+          },
+          itemBuilder: (context) => [
+            const PopupMenuItem(value: 'allow', child: Text('Allow')),
+            const PopupMenuItem(value: 'ask', child: Text('Ask')),
+            const PopupMenuItem(value: 'block', child: Text('Block')),
+          ],
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                current.capitalize(),
+                style: TextStyle(
+                  color: tint,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(Icons.arrow_drop_down, color: tint, size: 18),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -307,86 +585,197 @@ class PermissionList extends ConsumerWidget {
   }
 }
 
-/// Personality selector widget
+/// Personality selector widget with animated cards / choices
 class PersonalitySelector extends ConsumerWidget {
   final String? current;
+  final VoidCallback onChanged;
 
-  const PersonalitySelector({super.key, this.current});
+  const PersonalitySelector({super.key, this.current, required this.onChanged});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Column(
       children: AppConstants.personalities.keys.map((personality) {
-        return RadioListTile<String>(
-          title: Text(personality.capitalize()),
-          value: personality,
-          groupValue: current,
-          onChanged: (value) {
-            if (value != null) {
-              ref
-                  .read(settingsProvider.notifier)
-                  .updateSetting('personality', value);
-            }
-          },
+        final isSelected = current == personality;
+        final theme = Theme.of(context);
+        final scheme = theme.colorScheme;
+
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeInOut,
+          margin: const EdgeInsets.symmetric(vertical: 4),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? scheme.primary.withValues(alpha: 0.1)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isSelected
+                  ? scheme.primary.withValues(alpha: 0.5)
+                  : Colors.transparent,
+              width: 1,
+            ),
+          ),
+          child: RadioListTile<String>(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            title: Text(
+              personality.capitalize(),
+              style: TextStyle(
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                color: isSelected ? scheme.primary : scheme.onSurface,
+              ),
+            ),
+            subtitle: Text(
+              _getPersonalityDescription(personality),
+              style: theme.textTheme.bodySmall,
+            ),
+            value: personality,
+            groupValue: current,
+            onChanged: (value) {
+              if (value != null) {
+                ref
+                    .read(settingsProvider.notifier)
+                    .updateSetting('personality', value);
+                onChanged();
+              }
+            },
+          ),
         );
       }).toList(),
     );
   }
+
+  String _getPersonalityDescription(String personality) {
+    switch (personality.toLowerCase()) {
+      case 'direct':
+        return 'Short, concise, and straight to the point.';
+      case 'friendly':
+        return 'Warm, conversational, and encouraging.';
+      case 'professional':
+        return 'Formal, precise, and highly structured.';
+      default:
+        return 'Balanced behavioral style.';
+    }
+  }
 }
 
-/// Voice settings widget
+/// Voice settings widget with animated SwitchListTile
 class VoiceSettings extends ConsumerWidget {
-  const VoiceSettings({super.key});
+  const VoiceSettings({super.key, required this.onChanged});
+
+  final ValueChanged<String> onChanged;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
     final ttsEnabled = settings['tts_enabled'] as bool? ?? true;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
 
-    return SwitchListTile(
-      secondary: const ScreenRowIcon(icon: Icons.record_voice_over_outlined),
-      title: const Text('Text-to-Speech'),
-      subtitle: const Text('Read responses aloud'),
-      value: ttsEnabled,
-      onChanged: (value) {
-        ref.read(settingsProvider.notifier).updateSetting('tts_enabled', value);
-      },
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: SwitchListTile(
+        secondary: ScreenRowIcon(
+          icon: ttsEnabled
+              ? Icons.record_voice_over_outlined
+              : Icons.voice_over_off_outlined,
+          color: ttsEnabled
+              ? scheme.primary
+              : scheme.onSurfaceVariant.withValues(alpha: 0.5),
+          size: 38,
+        ),
+        title: const Text('Text-to-Speech'),
+        subtitle: const Text(
+          'Read assistant responses aloud using speech engine',
+        ),
+        value: ttsEnabled,
+        onChanged: (value) {
+          ref
+              .read(settingsProvider.notifier)
+              .updateSetting('tts_enabled', value);
+          onChanged('tts_enabled');
+        },
+      ),
     );
   }
 }
 
-/// Context size selector widget
+/// Context size selector widget with card styling
 class ContextSizeSelector extends ConsumerWidget {
   final int? current;
+  final VoidCallback onChanged;
 
-  const ContextSizeSelector({super.key, this.current});
+  const ContextSizeSelector({super.key, this.current, required this.onChanged});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Column(
       children: AppConstants.contextSizes.map((size) {
-        return RadioListTile<int>(
-          title: Text('$size tokens'),
-          value: size,
-          groupValue: current,
-          onChanged: (value) {
-            if (value != null) {
-              ref
-                  .read(settingsProvider.notifier)
-                  .updateSetting('context_size', value);
-            }
-          },
+        final isSelected = current == size;
+        final theme = Theme.of(context);
+        final scheme = theme.colorScheme;
+
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeInOut,
+          margin: const EdgeInsets.symmetric(vertical: 4),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? scheme.secondary.withValues(alpha: 0.1)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isSelected
+                  ? scheme.secondary.withValues(alpha: 0.5)
+                  : Colors.transparent,
+              width: 1,
+            ),
+          ),
+          child: RadioListTile<int>(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            title: Text(
+              '$size tokens',
+              style: TextStyle(
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                color: isSelected ? scheme.secondary : scheme.onSurface,
+              ),
+            ),
+            subtitle: Text(
+              _getContextDescription(size),
+              style: theme.textTheme.bodySmall,
+            ),
+            value: size,
+            groupValue: current,
+            onChanged: (value) {
+              if (value != null) {
+                ref
+                    .read(settingsProvider.notifier)
+                    .updateSetting('context_size', value);
+                onChanged();
+              }
+            },
+          ),
         );
       }).toList(),
     );
   }
+
+  String _getContextDescription(int size) {
+    if (size <= 2048) {
+      return 'Fast & lightweight. Best for quick Q&A.';
+    } else if (size <= 4096) {
+      return 'Standard context. Balanced memory and speed.';
+    } else {
+      return 'Large memory window. Good for long documents.';
+    }
+  }
 }
 
-/// About section widget
-///
-/// Stateful only so the installed version is read once per mount: it comes
-/// from a platform channel, and rebuilding it on every settings change would
-/// put a channel round-trip behind each tap.
+/// About section widget with icons and clean layout
 class AboutSection extends StatefulWidget {
   const AboutSection({super.key});
 
@@ -399,25 +788,34 @@ class _AboutSectionState extends State<AboutSection> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _NavRow(
           icon: Icons.speed,
-          title: 'Performance',
-          subtitle: 'Backend, chipset and a throughput benchmark',
+          title: 'Performance & Benchmark',
+          subtitle: 'Backend chipset speed and throughput testing',
           onTap: () => Navigator.of(context)
               .push(AppPageRoute(builder: (_) => const PerformanceScreen())),
         ),
-        const ScreenRowDivider(),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          child: ScreenRowDivider(),
+        ),
         _NavRow(
           icon: Icons.cloud_queue,
           title: 'Cloud Models',
-          subtitle: 'Bring your own API key — optional, off by default',
+          subtitle: 'Bring your own API key — optional and secure',
           onTap: () => Navigator.of(context)
               .push(AppPageRoute(builder: (_) => const CloudModelsScreen())),
         ),
-        const ScreenRowDivider(),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          child: ScreenRowDivider(),
+        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
           child: Row(
@@ -428,14 +826,21 @@ class _AboutSectionState extends State<AboutSection> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Version'),
+                    Text(
+                      'App Version',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
                     const SizedBox(height: 2),
-                    // The installed version, read from the package rather than
-                    // a compiled-in constant that drifts from the release tag.
                     FutureBuilder<String>(
                       future: _version,
-                      builder: (context, snap) =>
-                          Text(snap.data ?? AppConstants.appVersion),
+                      builder: (context, snap) => Text(
+                        snap.data ?? AppConstants.appVersion,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -443,35 +848,53 @@ class _AboutSectionState extends State<AboutSection> {
             ],
           ),
         ),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          child: ScreenRowDivider(),
+        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
           child: Row(
             children: [
               const ScreenRowIcon(icon: Icons.public),
               const SizedBox(width: 14),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('License'),
-                    SizedBox(height: 2),
-                    Text('MIT License'),
+                    Text(
+                      'License',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'MIT License',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
                   ],
                 ),
               ),
             ],
           ),
         ),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          child: ScreenRowDivider(),
+        ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
                   Container(
-                    width: 34,
-                    height: 34,
+                    width: 38,
+                    height: 38,
                     decoration: const BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topLeft,
@@ -482,23 +905,25 @@ class _AboutSectionState extends State<AboutSection> {
                     ),
                     child: const Icon(
                       Icons.psychology_rounded,
-                      size: 18,
+                      size: 20,
                       color: Colors.white,
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 12),
                   Text(
                     AppConstants.appName,
-                    style: Theme.of(context).textTheme.titleMedium,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
               Text(
-                // The same words the splash screen shows, so the two never
-                // disagree about what the product calls itself.
-                'Your private AI agent — fully on device.',
-                style: Theme.of(context).textTheme.bodySmall,
+                'Your private AI assistant — fully on device with local intelligence.',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
               ),
             ],
           ),
@@ -524,23 +949,34 @@ class _NavRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
     return ListTile(
       leading: ScreenRowIcon(icon: icon),
-      title: Text(title),
-      subtitle: Text(subtitle),
-      trailing: const Icon(Icons.chevron_right),
+      title: Text(
+        title,
+        style: theme.textTheme.bodyMedium?.copyWith(
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: scheme.onSurfaceVariant,
+        ),
+      ),
+      trailing: Icon(Icons.chevron_right, color: scheme.onSurfaceVariant),
       onTap: onTap,
     );
   }
 }
 
 /// One-time cloud consent.
-///
-/// Names the destination provider and states exactly what leaves the device.
-/// The opt-in is recorded against a specific provider id, so it is shown once
-/// per destination and again if the user switches to a different one.
 class CloudPrivacySection extends ConsumerWidget {
-  const CloudPrivacySection({super.key});
+  const CloudPrivacySection({super.key, required this.onChanged});
+
+  final VoidCallback onChanged;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -548,9 +984,11 @@ class CloudPrivacySection extends ConsumerWidget {
     final providerId = settings['active_cloud_provider'] as String?;
     final provider = providerId == null ? null : CloudCatalog.byId(providerId);
     final granted = cloudConsentGranted(settings, providerId);
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
 
     return Padding(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -558,38 +996,54 @@ class CloudPrivacySection extends ConsumerWidget {
             children: [
               ScreenRowIcon(
                 icon: granted ? Icons.cloud_done : Icons.cloud_off,
-                color: granted ? AppColors.success : null,
+                color: granted ? AppColors.success : scheme.onSurfaceVariant,
               ),
               const SizedBox(width: 14),
               Expanded(
-                child: Text(
-                  'Cloud use',
-                  style: Theme.of(context).textTheme.titleMedium,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Cloud Data Privacy',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      provider == null
+                          ? 'No active cloud provider'
+                          : provider.displayName,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           if (provider == null)
             Text(
-              'No cloud provider is selected, so nothing is ever sent off '
-              'this device. To allow cloud use, add a provider under Cloud '
-              'Models; you will be asked to confirm exactly what is shared '
-              'before the first request.',
-              style: Theme.of(context).textTheme.bodySmall,
+              'No cloud provider is selected, ensuring 100% on-device privacy. '
+              'Add a provider under Cloud Models to enable hybrid capabilities with explicit confirmation.',
+              style: theme.textTheme.bodySmall?.copyWith(height: 1.4),
             )
           else ...[
             Text(
               granted
-                  ? 'Cloud is enabled for ${provider.displayName}.'
-                  : 'Cloud is off for ${provider.displayName}. Nothing is '
-                        'sent until you confirm.',
-              style: Theme.of(context).textTheme.bodySmall,
+                  ? 'Cloud enabled for ${provider.displayName}. Requests transmit with your authorization.'
+                  : 'Cloud disabled for ${provider.displayName}. No data leaves device until confirmed.',
+              style: theme.textTheme.bodySmall?.copyWith(height: 1.4),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             if (!granted)
               FilledButton.icon(
-                onPressed: () => _confirmConsent(context, ref, provider),
+                onPressed: () {
+                  _confirmConsent(context, ref, provider);
+                  onChanged();
+                },
                 icon: const Icon(Icons.cloud_upload_outlined, size: 18),
                 label: Text('Enable cloud for ${provider.displayName}'),
               )
@@ -597,6 +1051,7 @@ class CloudPrivacySection extends ConsumerWidget {
               OutlinedButton.icon(
                 onPressed: () {
                   ref.read(settingsProvider.notifier).revokeCloudConsent();
+                  onChanged();
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Cloud consent withdrawn.')),
                   );
@@ -610,7 +1065,6 @@ class CloudPrivacySection extends ConsumerWidget {
     );
   }
 
-  /// Show the single opt-in dialog and persist consent on agreement.
   Future<void> _confirmConsent(
     BuildContext context,
     WidgetRef ref,
@@ -649,10 +1103,6 @@ class CloudPrivacySection extends ConsumerWidget {
 }
 
 /// "Erase all data" — two-step confirmation, then a full wipe.
-///
-/// The second confirmation is a real second step (a separate dialog that only
-/// accepts once the first has been given, guarded by [TwoStepConfirm]), not a
-/// single dialog with two buttons.
 class EraseDataSection extends ConsumerStatefulWidget {
   const EraseDataSection({super.key});
 
@@ -666,32 +1116,45 @@ class _EraseDataSectionState extends ConsumerState<EraseDataSection> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+
     return Padding(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       child: Row(
         children: [
-          ScreenRowIcon(icon: Icons.delete_forever, color: AppColors.danger),
+          const ScreenRowIcon(
+            icon: Icons.delete_forever,
+            color: AppColors.danger,
+          ),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Erase all data',
-                  style: Theme.of(context).textTheme.titleMedium,
+                  'Erase All Data',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.danger,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Delete chat history, memories, notes, documents, API keys '
-                  'and settings, and return to first run.',
-                  style: Theme.of(context).textTheme.bodySmall,
+                  'Permanently delete chat history, memories, notes, documents, and preferences.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 12),
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.danger,
                     side: BorderSide(
                       color: AppColors.danger.withValues(alpha: 0.5),
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
                     ),
                   ),
                   onPressed: _busy ? null : _startErase,
@@ -713,7 +1176,6 @@ class _EraseDataSectionState extends ConsumerState<EraseDataSection> {
   }
 
   Future<void> _startErase() async {
-    // ---- Step 1: what will be erased ------------------------------------
     final first = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -747,7 +1209,6 @@ class _EraseDataSectionState extends ConsumerState<EraseDataSection> {
     }
     _confirm.confirmFirst();
 
-    // ---- Step 2: the real second confirmation ---------------------------
     var deleteModels = false;
     final second = await showDialog<bool>(
       context: context,
@@ -796,7 +1257,6 @@ class _EraseDataSectionState extends ConsumerState<EraseDataSection> {
       ),
     );
 
-    // The gate only opens when both steps genuinely happened.
     if (second != true || !_confirm.confirmSecond()) {
       _confirm.cancel();
       return;
@@ -808,19 +1268,12 @@ class _EraseDataSectionState extends ConsumerState<EraseDataSection> {
   Future<void> _runErase(bool deleteModels) async {
     setState(() => _busy = true);
     try {
-      // Rows first: messages, memories, notes, documents, activity log and
-      // preferences. This is the existing wipe(); it was previously uncalled.
       await DatabaseHelper.instance.wipe();
-
-      // Secrets in the platform keystore: the cloud API keys and the database
-      // key that encrypted the (now deleted) rows.
       await SecureStore.instance.wipe();
 
-      // shared_preferences: active model selections and similar.
       final prefs = await SharedPreferences.getInstance();
       await prefs.clear();
 
-      // Optionally the downloaded GGUFs, under <app documents>/models/.
       if (deleteModels) {
         try {
           final docs = await getApplicationDocumentsDirectory();
@@ -832,12 +1285,10 @@ class _EraseDataSectionState extends ConsumerState<EraseDataSection> {
           }
           Log.i('erased downloaded models from ${models.path}');
         } catch (e) {
-          // Not fatal: the data itself is gone; only disk space was not freed.
           Log.w('could not delete downloaded models: $e');
         }
       }
 
-      // Back to a clean first-run state in memory, then on screen.
       await ref.read(settingsProvider.notifier).resetToDefaults();
       ref.invalidate(chatMessagesProvider);
       ref.invalidate(activityLogProvider);
@@ -860,6 +1311,7 @@ class _EraseDataSectionState extends ConsumerState<EraseDataSection> {
 
 extension StringExtension on String {
   String capitalize() {
+    if (isEmpty) return this;
     return '${this[0].toUpperCase()}${substring(1)}';
   }
 }

@@ -1184,13 +1184,26 @@ class ModelManager {
   ///    rather than pretending the selection took.
   Future<LocalModel> activeLlm() async {
     final id = await activeLlmId();
+    Log.d('ModelManager.activeLlm: prefActiveLlmId = $id');
     final m = ModelCatalog.byId(id);
     if (m != null && ModelCatalog.isChatCapable(m) && await isInstalled(m)) {
+      Log.d('ModelManager.activeLlm: returning selected model ${m.id}');
       return m;
     }
+    Log.d(
+      'ModelManager.activeLlm: selected model not found/not installed, checking installed llms',
+    );
     for (final candidate in ModelCatalog.llms) {
-      if (await isInstalled(candidate)) return candidate;
+      if (await isInstalled(candidate)) {
+        Log.d(
+          'ModelManager.activeLlm: returning installed candidate ${candidate.id}',
+        );
+        return candidate;
+      }
     }
+    Log.d(
+      'ModelManager.activeLlm: no installed models, returning default ${ModelCatalog.defaultLlm.id}',
+    );
     return ModelCatalog.defaultLlm;
   }
 
