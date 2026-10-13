@@ -1147,26 +1147,27 @@ class ModelSelectorDialog extends ConsumerWidget {
       title: const Text('Model Management'),
       content: const _ModelPickerBody(),
       actions: [
-        TextButton(
-          onPressed: () => _loadModelFromStorage(context, ref),
-          child: const Text('From storage'),
-        ),
-        const Spacer(),
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Close'),
-        ),
-        FilledButton(
-          style: FilledButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-          ),
-          onPressed: () => _loadSelectedModels(context, ref),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
+        SizedBox(
+          width: double.infinity,
+          child: Wrap(
+            alignment: WrapAlignment.end,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 4,
             children: [
-              Icon(Icons.play_arrow_rounded, size: 18),
-              SizedBox(width: 6),
-              Text('Load'),
+              TextButton(
+                onPressed: () => _loadModelFromStorage(context, ref),
+                child: const Text('From storage'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'),
+              ),
+              FilledButton.icon(
+                onPressed: () => _loadSelectedModels(context, ref),
+                icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                label: const Text('Load'),
+              ),
             ],
           ),
         ),
