@@ -1463,16 +1463,24 @@ class _ModelPickerBodyState extends ConsumerState<_ModelPickerBody> {
   }
 
   Future<void> _loadInstalled() async {
-    final results = await Future.wait(
-      ModelCatalog.all.map((m) async => (m.id, await _manager.isInstalled(m))),
-    );
-    if (!mounted) return;
-    setState(() {
-      _loading = false;
-      for (final r in results) {
-        _installed[r.$1] = r.$2;
-      }
-    });
+    try {
+      final results = await Future.wait(
+        ModelCatalog.all.map((m) async => (m.id, await _manager.isInstalled(m))),
+      );
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        for (final r in results) {
+          _installed[r.$1] = r.$2;
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      // On error, stop loading and show empty state
+      setState(() {
+        _loading = false;
+      });
+    }
   }
 
   Future<void> _refresh() async {
