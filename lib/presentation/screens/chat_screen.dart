@@ -1452,6 +1452,9 @@ class _ModelPickerBodyState extends ConsumerState<_ModelPickerBody> {
   /// the user just downloaded inside this session flips without a full reload.
   final Map<String, bool> _installed = {};
 
+  /// True while [_loadInstalled] is running so the UI can show a loading indicator.
+  bool _loading = true;
+
   @override
   void initState() {
     super.initState();
@@ -1465,6 +1468,7 @@ class _ModelPickerBodyState extends ConsumerState<_ModelPickerBody> {
     );
     if (!mounted) return;
     setState(() {
+      _loading = false;
       for (final r in results) {
         _installed[r.$1] = r.$2;
       }
@@ -1583,6 +1587,16 @@ class _ModelPickerBodyState extends ConsumerState<_ModelPickerBody> {
     // they are in use, and they are not.
     final stale =
         loaded != null && selectedLlm != null && loaded != selectedLlm.fileName;
+
+    // Show loading indicator while installing models are being detected.
+    if (_loading) {
+      return Container(
+        constraints: const BoxConstraints(minHeight: 200),
+        child: const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
 
     return SizedBox(
       width: double.maxFinite,
