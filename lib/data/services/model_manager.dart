@@ -1243,6 +1243,22 @@ class ModelManager {
     }
   }
 
+  Future<void> selectLlm(String id) async {
+    await setActiveLlmId(id);
+    final old = await activeLlmIds();
+    await setActiveLlmIds([id, ...old.where((x) => x != id)]);
+  }
+
+  Future<void> selectVision(String? id) async {
+    await setActiveVisionId(id);
+    if (id == null) {
+      await setActiveVisionIds(const <String>[]);
+    } else {
+      final old = await activeVisionIds();
+      await setActiveVisionIds([id, ...old.where((x) => x != id)]);
+    }
+  }
+
   /// The active chat model, falling back to the default when unset/missing.
   ///
   /// Two traps this must not fall into, both of which made the Load button

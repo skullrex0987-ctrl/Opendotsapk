@@ -1211,24 +1211,16 @@ class ModelSelectorDialog extends ConsumerWidget {
     // a mismatched pairing left the app frozen with no way out short of
     // force-closing. That is the "I tap Load over and over and it never
     // loads" report — the load never started, but the screen looked busy.
-    final vision = await manager.activeVision();
+    var vision = await manager.activeVision();
+    String? visionNote;
     if (vision != null && chat.id != vision.id) {
       final chatArch = chat.llmArch;
       final visionArch = vision.llmArch;
       if (chatArch != null && visionArch != null && chatArch != visionArch) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Architecture mismatch: ${chat.displayName} cannot use '
-                '${vision.displayName}. Vision projectors only work with their '
-                'matching LLM. Select ${vision.displayName} as the chat model '
-                'instead, or pick a vision model for a compatible chat model.',
-              ),
-            ),
-          );
-        }
-        return;
+        visionNote =
+            'Vision off: ${vision.displayName} does not match '
+            '${chat.displayName}.';
+        vision = null;
       }
     }
 
@@ -1309,7 +1301,8 @@ class ModelSelectorDialog extends ConsumerWidget {
                 ? ' · CPU'
                 : ' · GPU'}'
             ' · ${llmService.threads} threads'
-            '${visionAttached ? ' · vision on' : ''}';
+            '${visionAttached ? ' · vision on' : ''}'
+            '${visionNote == null ? '' : ' · $visionNote'}';
       } else if (!ok && message == 'Failed to load model') {
         // The native error is the only diagnostic that distinguishes "out of
         // RAM" from "corrupt file" from "GPU driver refused" — show it.
@@ -1520,10 +1513,14 @@ class _ModelPickerBodyState extends ConsumerState<_ModelPickerBody> {
   Future<void> _chooseIn(ModelKind section, LocalModel m) async {
     switch (section) {
       case ModelKind.llm:
-        await _manager.setActiveLlmId(m.id);
+        await _manager.selectLlm(m.id);
         break;
       case ModelKind.vision:
-        await _manager.setActiveVisionId(m.id);
+        if (_visionId == m.id) {
+          await _manager.selectVision(null);
+        } else {
+          await _manager.selectVision(m.id);
+        }
         break;
       case ModelKind.embedding:
         await _manager.setActiveEmbeddingId(m.id);

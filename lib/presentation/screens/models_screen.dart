@@ -145,10 +145,14 @@ class _ModelsScreenState extends ConsumerState<ModelsScreen> {
   Future<void> _select(LocalModel m, bool installed, ModelKind section) async {
     switch (section) {
       case ModelKind.llm:
-        await _manager.setActiveLlmId(installed ? m.id : null);
+        if (installed) {
+          await _manager.selectLlm(m.id);
+        } else {
+          await _manager.setActiveLlmId(null);
+        }
         break;
       case ModelKind.vision:
-        await _manager.setActiveVisionId(installed ? m.id : null);
+        await _manager.selectVision(installed ? m.id : null);
         break;
       case ModelKind.embedding:
         await _manager.setActiveEmbeddingId(installed ? m.id : null);
